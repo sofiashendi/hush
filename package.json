@@ -1,0 +1,49 @@
+{
+  "name": "hush",
+  "version": "1.0.0",
+  "description": "A custom macOS application to capture speech, convert it to text using a local LLM/STT model, and inject it into the currently focused application.",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dist": "vite build && electron-builder",
+    "dev": "lsof -ti :34567 | xargs kill -9 || true && vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "build": {
+    "appId": "com.hush.app",
+    "productName": "Hush",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "dist-react/**/*"
+    ],
+    "mac": {
+      "target": "dmg",
+      "icon": "public/icon.png"
+    }
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "electron-squirrel-startup": "^1.0.1",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.2",
+    "concurrently": "^9.2.1",
+    "electron": "^39.2.7",
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.0",
+    "vite-plugin-electron": "^0.29.0",
+    "vitest": "^4.0.16",
+    "wait-on": "^9.0.3"
+  }
+}

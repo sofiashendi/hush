@@ -1,0 +1,17 @@
+/// <reference types="vite/client" />
+
+interface Window {
+    electronAPI: {
+        onToggleRecording: (callback: () => void) => () => void;
+        onOpenSettings: (callback: () => void) => () => void;
+        pasteText: (text: string, autoPaste: boolean, deleteCount?: number) => Promise<void>;
+        typePlaceholder: () => Promise<void>;
+        removePlaceholder: () => Promise<void>;
+        setTrayTitle: (title: string) => Promise<void>;
+        hideWindow: () => Promise<void>;
+        transcribeAudio: (audioBuffer: ArrayBuffer, aiPolish: boolean) => Promise<{ text: string }>;
+        getConfig: () => Promise<any>;
+        saveConfig: (config: any) => Promise<boolean>;
+        log: (message: string) => void;
+    }
+}

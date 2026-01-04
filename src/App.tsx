@@ -159,15 +159,12 @@ export default function App() {
             // Track segment start time for minimum duration validation
             let segmentStartTime = Date.now();
 
+            let isVadTriggered = false;
             let isFlushing = false;
             const lastFlushTimeRef = { current: Date.now() };
             const lastActivityTimeRef = { current: Date.now() };
             const MIN_SEGMENT_DURATION_MS = 400; // Minimum audio duration to send
             const MIN_FLUSH_INTERVAL_MS = 1000; // Rate limit: max 1 flush per second
-
-            // Pending chunks for processing (captured by requestData)
-            let pendingBlob: Blob | null = null;
-            let pendingMaxVolume = 0;
 
             const flushSegment = () => {
                 if (isFlushing) return;
@@ -177,23 +174,18 @@ export default function App() {
                 const timeSinceLastFlush = now - lastFlushTimeRef.current;
 
                 // Rate limiting: but DON'T discard - just delay the flush
-                // Audio chunks will continue accumulating until we can flush
                 if (timeSinceLastFlush < MIN_FLUSH_INTERVAL_MS) {
-                    return; // Audio keeps accumulating, will flush on next check after rate limit expires
+                    return; // Audio keeps accumulating, will flush on next check
                 }
 
-                // Minimum duration check: prevent sending very short audio
+                // Minimum duration check
                 if (segmentDuration < MIN_SEGMENT_DURATION_MS) {
-                    console.log(`[VAD] Segment too short: ${segmentDuration}ms`);
                     return;
                 }
 
-                // Don't flush if it was just silence (stricter threshold)
+                // Don't flush if it was just silence
                 const isSilence = maxVolumeRef.current < 8.0;
-
-                // If it's silence and we haven't spoken yet, just reset.
                 if (isSilence && !isSpeakingRef.current) {
-                    // Drop this segment entirely
                     audioChunksRef.current = [];
                     segmentStartTime = Date.now();
                     lastFlushTimeRef.current = Date.now();
@@ -203,13 +195,14 @@ export default function App() {
 
                 console.log(`[VAD] Flushing segment. MaxRMS: ${maxVolumeRef.current.toFixed(2)}, Duration: ${segmentDuration}ms`);
                 isFlushing = true;
-                pendingMaxVolume = maxVolumeRef.current;
+                isVadTriggered = true;
 
-                // Use requestData() instead of stop() - this gets current chunks WITHOUT stopping recording
+                // Stop the recorder - onstop will process and restart
                 if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-                    mediaRecorderRef.current.requestData();
+                    mediaRecorderRef.current.stop();
                 } else {
                     isFlushing = false;
+                    isVadTriggered = false;
                 }
             };
 
@@ -221,44 +214,29 @@ export default function App() {
 
                 const now = Date.now();
 
-                // VAD Logic (RMS 3.0 for Activity - Safe default)
                 if (rms > 3.0) {
                     lastActivityTimeRef.current = now;
                 }
 
-                // Debug: Log VAD state every 2 seconds
-                const timeSinceLastLog = now - (window as any).lastVadLog || 0;
-                if (timeSinceLastLog > 2000) {
-                    (window as any).lastVadLog = now;
-                    const silenceDuration = silenceStartRef.current ? now - silenceStartRef.current : 0;
-                    console.log(`[VAD Debug] RMS=${rms.toFixed(1)}, Speaking=${isSpeakingRef.current}, Silence=${silenceDuration}ms, Chunks=${audioChunksRef.current.length}`);
-                }
-
-                // Threshold for Speech (20.0 - Speech start)
-                // Raised to 20.0 to avoid ambient noise and breathing
+                // Speech detection
                 if (rms > 20.0) {
                     silenceStartRef.current = null;
                     isSpeakingRef.current = true;
                 } else {
-                    // Silence logic
                     if (!silenceStartRef.current) silenceStartRef.current = now;
-                    // Wait 1000ms (1 second) of silence before flushing.
-                    // Snappy response.
                     else if (now - silenceStartRef.current > 1000 && isSpeakingRef.current) {
                         flushSegment();
                     }
                 }
 
-                // Safety limits: Force flush to prevent hitting CF's 25MB limit
-                // ~5MB = ~30 minutes of WebM audio
+                // Safety limits for long recordings
                 const MAX_SEGMENT_SIZE_BYTES = 5 * 1024 * 1024;
-                const MAX_SEGMENT_DURATION_MS = 30 * 60 * 1000; // 30 minutes
+                const MAX_SEGMENT_DURATION_MS = 30 * 60 * 1000;
                 const currentSize = audioChunksRef.current.reduce((sum, chunk) => sum + chunk.size, 0);
                 const segmentAge = now - segmentStartTime;
 
                 if ((currentSize > MAX_SEGMENT_SIZE_BYTES || segmentAge > MAX_SEGMENT_DURATION_MS) && audioChunksRef.current.length > 0) {
-                    console.log(`[VAD] Safety flush: Size=${(currentSize / 1024 / 1024).toFixed(1)}MB, Age=${Math.floor(segmentAge / 1000)}s`);
-                    // Force set speaking to true so flushSegment doesn't skip
+                    console.log(`[VAD] Safety flush: Size=${(currentSize / 1024 / 1024).toFixed(1)}MB`);
                     isSpeakingRef.current = true;
                     flushSegment();
                 }
@@ -269,74 +247,74 @@ export default function App() {
             };
             checkVolume();
 
-            const mediaRecorder = new MediaRecorder(stream);
-            mediaRecorderRef.current = mediaRecorder;
+            // Helper to create and start a new MediaRecorder
+            const createMediaRecorder = () => {
+                const recorder = new MediaRecorder(stream);
+                mediaRecorderRef.current = recorder;
 
-            mediaRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) {
-                    if (isFlushing) {
-                        // This is data from requestData() - process it
+                recorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) {
                         audioChunksRef.current.push(e.data);
-                        pendingBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                        audioChunksRef.current = []; // Clear for next segment
+                    }
+                };
 
-                        const blobToProcess = pendingBlob;
-                        const volumeToProcess = pendingMaxVolume;
+                recorder.onstop = async () => {
+                    const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                    audioChunksRef.current = [];
+                    const sessionMaxVolume = maxVolumeRef.current;
 
-                        // Reset state for next segment
-                        segmentStartTime = Date.now();
+                    if (isVadTriggered) {
+                        // VAD flush - process and restart recorder
+                        isVadTriggered = false;
+                        isFlushing = false;
                         lastFlushTimeRef.current = Date.now();
+                        segmentStartTime = Date.now();
                         silenceStartRef.current = null;
                         isSpeakingRef.current = false;
                         maxVolumeRef.current = 0;
-                        isFlushing = false;
-                        pendingBlob = null;
 
-                        // Process asynchronously
+                        // Process audio asynchronously
                         transcriptionQueueRef.current = transcriptionQueueRef.current.then(async () => {
-                            if (blobToProcess.size > 0) {
-                                await processAudio(blobToProcess, true, volumeToProcess);
+                            if (blob.size > 0) {
+                                await processAudio(blob, true, sessionMaxVolume);
                             }
                         });
+
+                        // Restart recorder for next segment (if still recording)
+                        if (statusRef.current === 'recording') {
+                            createMediaRecorder();
+                            mediaRecorderRef.current?.start();
+                        }
                     } else {
-                        // Normal accumulation during recording
-                        audioChunksRef.current.push(e.data);
+                        // User stopped recording
+                        if (timerRef.current) clearInterval(timerRef.current);
+                        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+                        setDuration(0);
+
+                        silenceStartRef.current = null;
+                        isSpeakingRef.current = false;
+                        maxVolumeRef.current = 0;
+
+                        const MIN_BLOB_SIZE = 5000;
+                        const hasMeaningfulAudio = blob.size > MIN_BLOB_SIZE;
+                        console.log(`[Stop] Final segment: size=${blob.size}, sending=${hasMeaningfulAudio}`);
+
+                        transcriptionQueueRef.current = transcriptionQueueRef.current.then(async () => {
+                            if (hasMeaningfulAudio) {
+                                setStatus('processing');
+                                await processAudio(blob, false, sessionMaxVolume);
+                            } else {
+                                setStatus('idle');
+                            }
+                        });
                     }
-                }
+                };
+
+                return recorder;
             };
 
-            mediaRecorder.onstop = async () => {
-                // Only called when user stops recording (not during VAD flushes)
-                if (timerRef.current) clearInterval(timerRef.current);
-                if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-                setDuration(0);
-
-                const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                audioChunksRef.current = [];
-                const sessionMaxVolume = maxVolumeRef.current;
-
-                silenceStartRef.current = null;
-                isSpeakingRef.current = false;
-                maxVolumeRef.current = 0;
-
-                // Only send to API if there's meaningful audio content
-                // Skip if blob is too small (likely silence after VAD flush)
-                const MIN_BLOB_SIZE = 5000; // ~50ms of audio minimum
-                const hasMeaningfulAudio = blob.size > MIN_BLOB_SIZE;
-                console.log(`[Stop] Final segment: size=${blob.size}, sending=${hasMeaningfulAudio}`);
-
-                transcriptionQueueRef.current = transcriptionQueueRef.current.then(async () => {
-                    if (hasMeaningfulAudio) {
-                        setStatus('processing');
-                        await processAudio(blob, false, sessionMaxVolume);
-                    } else {
-                        console.log(`[Stop] Skipped empty/silent final segment`);
-                        setStatus('idle');
-                    }
-                });
-            };
-
-            mediaRecorder.start();
+            createMediaRecorder();
+            mediaRecorderRef.current?.start();
             setStatus('recording');
             statusRef.current = 'recording'; // Manual sync for immediate loop check
             setWordCount(null);

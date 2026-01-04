@@ -226,6 +226,14 @@ export default function App() {
                     lastActivityTimeRef.current = now;
                 }
 
+                // Debug: Log VAD state every 2 seconds
+                const timeSinceLastLog = now - (window as any).lastVadLog || 0;
+                if (timeSinceLastLog > 2000) {
+                    (window as any).lastVadLog = now;
+                    const silenceDuration = silenceStartRef.current ? now - silenceStartRef.current : 0;
+                    console.log(`[VAD Debug] RMS=${rms.toFixed(1)}, Speaking=${isSpeakingRef.current}, Silence=${silenceDuration}ms, Chunks=${audioChunksRef.current.length}`);
+                }
+
                 // Threshold for Speech (20.0 - Speech start)
                 // Raised to 20.0 to avoid ambient noise and breathing
                 if (rms > 20.0) {
@@ -524,22 +532,17 @@ export default function App() {
                                 <AnimatePresence>
                                     {(status === 'recording' || status === 'processing' || transcript) && (
                                         <>
-                                            {/* Comparison Panel - Raw Whisper output */}
-                                            {aiPolish && rawTranscript && rawTranscript !== transcript && (
-                                                <motion.div
-                                                    initial={{ opacity: 0, height: 0 }}
-                                                    animate={{ opacity: 1, height: 'auto' }}
-                                                    exit={{ opacity: 0, height: 0 }}
-                                                    className="mb-3"
-                                                >
-                                                    <div className="flex items-center gap-2 mb-2">
-                                                        <span className="text-amber-400/60 text-xs tracking-wide uppercase">Raw Whisper</span>
-                                                    </div>
-                                                    <div className="backdrop-blur-xl bg-amber-500/5 rounded-xl border border-amber-500/20 p-3 max-h-24 overflow-y-auto">
-                                                        <p className="text-amber-200/70 text-xs font-mono">{rawTranscript}</p>
-                                                    </div>
-                                                </motion.div>
+                                            {/* Raw Whisper Panel */}
+                                            {aiPolish && (
+                                                <LiveTranscript
+                                                    transcript={rawTranscript}
+                                                    isRecording={status === 'recording' || status === 'starting'}
+                                                    wordCount={null}
+                                                    label="Raw Whisper"
+                                                    variant="amber"
+                                                />
                                             )}
+                                            {/* Polished Panel */}
                                             <LiveTranscript
                                                 transcript={transcript}
                                                 isRecording={status === 'recording' || status === 'starting'}

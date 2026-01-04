@@ -1,19 +1,26 @@
 import React from 'react';
-import { MicIcon, StopIcon } from './Icons';
+import { MicIcon, StopIcon, CopyIcon } from './Icons';
 import Waveform from './Waveform';
 
 interface RecorderViewProps {
     status: 'idle' | 'starting' | 'recording' | 'processing' | 'error';
     duration: number;
     wordCount: number | null;
+    transcript: string;
     onToggle: () => void;
     formatTime: (seconds: number) => string;
 }
+
+// Helper to copy
+const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+};
 
 const RecorderView: React.FC<RecorderViewProps> = ({
     status,
     duration,
     wordCount,
+    transcript,
     onToggle,
     formatTime
 }) => {
@@ -47,6 +54,22 @@ const RecorderView: React.FC<RecorderViewProps> = ({
                     {status === 'processing' && <div className="progress"><div className="progress-bar" /></div>}
                     {status === 'error' && <span style={{ color: '#ff453a' }}>Service failed (Check Settings)</span>}
                 </div>
+
+                {/* Live Transcript Box */}
+                {(transcript || status === 'recording' || status === 'processing') && (
+                    <div className="transcript-box">
+                        <textarea
+                            readOnly
+                            value={transcript + (status === 'recording' ? '...' : '')}
+                            placeholder="Listening..."
+                        />
+                        {transcript && (
+                            <button className="copy-btn" onClick={() => copyToClipboard(transcript)} title="Copy to Clipboard">
+                                <CopyIcon />
+                            </button>
+                        )}
+                    </div>
+                )}
             </div>
         </>
     );

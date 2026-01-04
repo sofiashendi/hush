@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, clipboard, safeStorage, Tray, Menu, net } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, clipboard, safeStorage, Tray, Menu, net, nativeImage } from 'electron';
 import path from 'path';
 import { exec } from 'child_process';
 import fs from 'fs';
@@ -23,30 +23,33 @@ const createWindow = () => {
 
     // Icon is set in package.json for build, but here for dev
     const iconPath = path.join(__dirname, '../public/icon.png');
-    // DEBUG LOGS
-    // DEBUG LOGS
-    console.log('Detected __dirname:', __dirname);
-    console.log('Checking icon path:', iconPath);
-    console.log('Icon exists?', fs.existsSync(iconPath));
 
     // Set Dock Icon (macOS)
     if (process.platform === 'darwin') {
-        app.dock?.setIcon(iconPath);
+        if (fs.existsSync(iconPath)) {
+            try {
+                app.dock?.setIcon(iconPath);
+            } catch (err) {
+                console.error("Critical: Failed to set dock icon", err);
+            }
+        } else {
+            console.log("No icon found at", iconPath);
+        }
     }
 
     // Create the browser window.
     mainWindow = new BrowserWindow({
-        width: 400,
-        height: 300,
+        width: 800,
+        height: 600,
         title: 'Hush',
         icon: iconPath,
-        titleBarStyle: 'hidden', // Adds traffic lights on frameless-like window
-        trafficLightPosition: { x: 12, y: 12 }, // Inset slightly
+        frame: false,
+        titleBarStyle: undefined, // Remove traffic lights
+        trafficLightPosition: undefined,
         transparent: true,
         backgroundColor: '#00000000', // transparent hex
-        hasShadow: true,
-        vibrancy: 'under-window',
-        visualEffectState: 'active',
+        hasShadow: false, // Let React handle shadows
+        // vibrancy: 'under-window', // REMOVED: This causes the gray box
         center: false,
         alwaysOnTop: false,
         webPreferences: {
@@ -97,11 +100,18 @@ const createWindow = () => {
     });
 
     // Tray Setup
-    // User requested "Just show the mic emoji".
-    // We create an empty transparency so only the text (emoji) shows.
-    const { nativeImage } = require('electron');
-    const transparentIcon = nativeImage.createEmpty();
-    tray = new Tray(transparentIcon);
+    const trayIconPath = path.join(__dirname, '../public/tray-icon.png');
+    // Resize to 22x22 for standard macOS menu bar size
+    const trayIcon = nativeImage.createFromPath(trayIconPath).resize({ width: 22, height: 22 });
+    // setTemplateImage(true) makes it monochrome (black/white) adapting to system theme.
+    // If the user wants the colorful icon, we should set this to FALSE.
+    // The user said "Menu bar icon is still an ugly mic emoji".
+    // They provided a colored icon. Let's try FALSE first to show the user's icon as-is, or TRUE if they want it to blend.
+    // Given the "ios" icon is colorful, using it as a Template might look weird (just a black square).
+    // I will set it to FALSE to render the colored image, but resized.
+    trayIcon.setTemplateImage(false);
+
+    tray = new Tray(trayIcon);
     const contextMenu = Menu.buildFromTemplate([
         { label: 'Show Hush', click: () => mainWindow?.show() },
         { label: 'Settings', click: () => mainWindow?.webContents.send('open-settings') },
@@ -111,8 +121,8 @@ const createWindow = () => {
     tray.setToolTip('Hush');
     tray.setContextMenu(contextMenu);
 
-    // Initial Title
-    tray.setTitle(' 🎙️');
+    // Initial Title (Empty)
+    tray.setTitle('');
 };
 
 ipcMain.handle('set-tray-title', (event, title) => {
@@ -149,6 +159,8 @@ app.whenReady().then(() => {
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
             createWindow();
+        } else if (mainWindow) {
+            mainWindow.show();
         }
     });
 });

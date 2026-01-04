@@ -1,197 +1,131 @@
 import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { AppIcon } from './components/AppIcon';
+import { MicrophoneButton } from './components/MicrophoneButton';
+import { LiveTranscript } from './components/LiveTranscript';
+import { SettingsPanel } from './components/SettingsPanel';
+import { Settings, X } from 'lucide-react';
 import { calculateRMS } from './utils/audioUtils';
-import { GearIcon } from './components/Icons';
-import SettingsForm from './components/SettingsForm';
-import RecorderView from './components/RecorderView';
 
-function App() {
+export default function App() {
+    // Logic State
     const [status, setStatus] = useState<'idle' | 'starting' | 'recording' | 'processing' | 'error'>('idle');
     const [duration, setDuration] = useState(0);
     const [wordCount, setWordCount] = useState<number | null>(null);
+    const [transcript, setTranscript] = useState('');
 
-    // Settings State
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    // UI State
+    const [isMinimized, setIsMinimized] = useState(false);
+    const [showSettings, setShowSettings] = useState(false);
+
+    // Config State
     const [apiUrl, setApiUrl] = useState('');
     const [apiKey, setApiKey] = useState('');
     const [autoPaste, setAutoPaste] = useState(false);
     const [aiPolish, setAiPolish] = useState(false);
 
+    // Refs
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const timerRef = useRef<number | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
-    const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
     const maxVolumeRef = useRef<number>(0);
     const animationFrameRef = useRef<number | null>(null);
+    const streamRef = useRef<MediaStream | null>(null);
 
     // Continuous Dictation Refs
     const silenceStartRef = useRef<number | null>(null);
     const isSpeakingRef = useRef<boolean>(false);
-    const hasPlaceholderRef = useRef<boolean>(false); // Track if we typed '...'
+    const hasPlaceholderRef = useRef<boolean>(false);
     const transcriptionQueueRef = useRef<Promise<void>>(Promise.resolve());
+    const statusRef = useRef(status);
+    const autoPasteRef = useRef(autoPaste);
+    const aiPolishRef = useRef(aiPolish);
+    const lastToggleTimeRef = useRef<number>(0);
 
-    useEffect(() => {
-        // Override console.log to pipe to terminal
-        const originalLog = console.log;
-        const originalError = console.error;
+    // Sync Refs
+    useEffect(() => { statusRef.current = status; }, [status]);
+    useEffect(() => { autoPasteRef.current = autoPaste; }, [autoPaste]);
+    useEffect(() => { aiPolishRef.current = aiPolish; }, [aiPolish]);
 
-        console.log = (...args) => {
-            // Keep original behavior
-            originalLog(...args);
-            // Send to main process
-            window.electronAPI.log(args.map(a => String(a)).join(' '));
-        };
-
-        console.error = (...args) => {
-            originalError(...args);
-            window.electronAPI.log('ERROR: ' + args.map(a => String(a)).join(' '));
-        };
-
-        console.log('App Mounted - Logger Initialized');
-
-        const removeToggleListener = window.electronAPI.onToggleRecording(() => {
-            console.log('Received toggle-recording event');
-            handleToggle();
-        });
-
-        // Load Config on Mount
-        window.electronAPI.getConfig().then(config => {
+    // Load Config
+    const loadConfig = async () => {
+        try {
+            const config = await window.electronAPI.getConfig();
             if (config.apiUrl) setApiUrl(config.apiUrl);
             if (config.apiKey) setApiKey(config.apiKey);
             if (config.autoPaste !== undefined) setAutoPaste(config.autoPaste);
-            if (config.aiPolish !== undefined) setAiPolish(config.aiPolish); // Load Polish setting
+            if (config.aiPolish !== undefined) setAiPolish(config.aiPolish);
 
-            // If missing keys, open settings automatically
             if (!config.apiUrl || !config.apiKey) {
-                setIsSettingsOpen(true);
+                setShowSettings(true);
             }
+        } catch (e) {
+            console.error("Config load error", e);
+        }
+    };
+
+    useEffect(() => {
+        // Logger
+        const originalLog = console.log;
+        const originalError = console.error;
+        console.log = (...args) => { originalLog(...args); window.electronAPI.log(args.map(a => String(a)).join(' ')); };
+        console.error = (...args) => { originalError(...args); window.electronAPI.log('ERROR: ' + args.map(a => String(a)).join(' ')); };
+
+        // Toggle Listener
+        const removeToggleListener = window.electronAPI.onToggleRecording(() => {
+            handleToggle();
         });
 
-        return () => {
-            removeToggleListener();
-        };
-
-    }, []); // Empty dependency ensures we use ref/functional updates correctly
-
-    // Use a ref to track current status for the event listener closure
-    const statusRef = useRef(status);
-    useEffect(() => {
-        statusRef.current = status;
-
-        // Update Tray Title based on Status
-        // Update Tray Title based on Status
-        let title = ' 🎙️'; // Default for Idle
-        if (status === 'recording') title = ' 🔴 Rec';
-        else if (status === 'processing') title = ' ⏳';
-        else if (status === 'error') title = ' ⚠️';
-
-        window.electronAPI.setTrayTitle(title);
-    }, [status]);
-
-    // Refs for closures
-    const autoPasteRef = useRef(autoPaste);
-    const aiPolishRef = useRef(aiPolish);
-
-    useEffect(() => { autoPasteRef.current = autoPaste }, [autoPaste]);
-    useEffect(() => { aiPolishRef.current = aiPolish }, [aiPolish]);
-
-    const lastToggleTimeRef = useRef<number>(0);
-
-    const handleToggle = () => {
-        // Ignored if settings are open
-        if (isSettingsOpen) return;
-
-        const now = Date.now();
-        if (now - lastToggleTimeRef.current < 250) {
-            console.log('Ignored rapid toggle');
-            return;
-        }
-        lastToggleTimeRef.current = now;
-
-        const current = statusRef.current;
-        if (current === 'recording') {
-            stopRecording();
-        } else if (current === 'idle') {
-            startRecording();
-        }
-    };
-
-    const saveSettings = async () => {
-        const success = await window.electronAPI.saveConfig({ apiUrl, apiKey, autoPaste, aiPolish });
-        if (success) {
-            setIsSettingsOpen(false);
-        }
-    };
-
-    // Stream Ref
-    const streamRef = useRef<MediaStream | null>(null);
-
-    // PERSISTENT AUDIO: Init Once, Keep Alive for Low Latency
-    useEffect(() => {
-        const initAudio = async () => {
-            if (streamRef.current) return;
-
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                streamRef.current = stream;
-
-                const audioContext = new AudioContext();
-                const analyser = audioContext.createAnalyser();
-                const source = audioContext.createMediaStreamSource(stream);
-                source.connect(analyser);
-                analyser.fftSize = 256;
-
-                audioContextRef.current = audioContext;
-                analyserRef.current = analyser;
-                console.log('Microphone pre-warmed & ready.');
-            } catch (err) {
-                console.error('Failed to init microphone:', err);
-            }
-        };
+        loadConfig();
         initAudio();
 
         return () => {
-            // Cleanup only on App Unmount
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach(track => track.stop());
-            }
-            if (audioContextRef.current) {
-                audioContextRef.current.close();
-            }
+            removeToggleListener();
+            if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
+            if (audioContextRef.current) audioContextRef.current.close();
         };
     }, []);
 
+    // Persistent Audio Init
+    const initAudio = async () => {
+        if (streamRef.current) return;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            streamRef.current = stream;
+            const audioContext = new AudioContext();
+            const analyser = audioContext.createAnalyser();
+            const source = audioContext.createMediaStreamSource(stream);
+            source.connect(analyser);
+            analyser.fftSize = 256;
+            audioContextRef.current = audioContext;
+            analyserRef.current = analyser;
+            console.log('Microphone ready.');
+        } catch (err) {
+            console.error('Failed to init microphone:', err);
+        }
+    };
+
+    const handleToggle = () => {
+        if (showSettings) return;
+        const now = Date.now();
+        if (now - lastToggleTimeRef.current < 250) return;
+        lastToggleTimeRef.current = now;
+
+        if (statusRef.current === 'recording') stopRecording();
+        else if (statusRef.current === 'idle') startRecording();
+    };
 
     const startRecording = async () => {
         if (statusRef.current !== 'idle') return;
+        setTranscript('');
 
-        // Ensure stream is ready
+        // Re-init Logic if needed (similar to old App.tsx but condensed)
         if (!streamRef.current || !audioContextRef.current) {
-            console.log('Microphone not ready, initializing now...');
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true
-                    }
-                });
-                streamRef.current = stream;
-
-                const audioContext = new AudioContext();
-                const analyser = audioContext.createAnalyser();
-                const source = audioContext.createMediaStreamSource(stream);
-                source.connect(analyser);
-                analyser.fftSize = 256;
-
-                audioContextRef.current = audioContext;
-                analyserRef.current = analyser;
-                sourceRef.current = source;
-            } catch (e) {
-                console.error("Critical: Could not init audio", e);
-                return;
-            }
+            // Fallback init
+            await initAudio();
+            if (!streamRef.current) return;
         }
 
         setStatus('starting');
@@ -201,66 +135,41 @@ function App() {
             const audioContext = audioContextRef.current!;
             const analyser = analyserRef.current!;
 
-            if (audioContext.state === 'suspended') {
-                await audioContext.resume();
-            }
+            if (audioContext.state === 'suspended') await audioContext.resume();
 
-            // Reset Refs
             maxVolumeRef.current = 0;
             silenceStartRef.current = null;
             isSpeakingRef.current = false;
             audioChunksRef.current = [];
 
-            // NEW STRATEGY: Stop and Restart MediaRecorder to get valid headers every time
             let isVadTriggered = false;
-            let isFlushing = false; // Lock to prevent multiple stop calls
+            let isFlushing = false;
 
             const flushSegment = () => {
-                if (isFlushing) return; // Prevent re-entry loop
-
-                console.log('Flushing Segment (Restarting Recorder)...');
-
-                // LOCK immediately so checkVolume doesn't trigger this again in the next frame
+                if (isFlushing) return;
                 isFlushing = true;
-
-                // Mark that this was triggered by VAD
                 isVadTriggered = true;
-
-                // Stopping triggers onstop, which handles the processing AND restart
                 if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
                     mediaRecorderRef.current.stop();
                 } else {
-                    isFlushing = false; // Release lock if we failed to stop
+                    isFlushing = false;
                 }
             };
 
             const checkVolume = () => {
                 const dataArray = new Uint8Array(analyser.fftSize);
                 analyser.getByteTimeDomainData(dataArray);
-
                 const rms = calculateRMS(dataArray);
+                if (rms > maxVolumeRef.current) maxVolumeRef.current = rms;
 
-                if (rms > maxVolumeRef.current) {
-                    maxVolumeRef.current = rms;
-                }
-
-                // VAD Logic (Threshold: 10.0 RMS)
                 const now = Date.now();
                 if (rms > 10.0) {
-                    // Speaking
                     silenceStartRef.current = null;
                     isSpeakingRef.current = true;
                 } else {
-                    // Silence
-                    if (!silenceStartRef.current) {
-                        silenceStartRef.current = now;
-                    } else {
-                        // Check duration (700ms)
-                        const diff = now - silenceStartRef.current;
-                        if (diff > 700 && isSpeakingRef.current) {
-                            // Silence Threshold Met -> Flush
-                            flushSegment();
-                        }
+                    if (!silenceStartRef.current) silenceStartRef.current = now;
+                    else if (now - silenceStartRef.current > 700 && isSpeakingRef.current) {
+                        flushSegment();
                     }
                 }
 
@@ -270,72 +179,50 @@ function App() {
             };
             checkVolume();
 
-
             const mediaRecorder = new MediaRecorder(stream);
             mediaRecorderRef.current = mediaRecorder;
 
-            mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) audioChunksRef.current.push(event.data);
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) audioChunksRef.current.push(e.data);
             };
 
             mediaRecorder.onstop = async () => {
-                // Ensure timer/animation frame cleanup only if we are truly stopping (not VAD restart)
                 if (!isVadTriggered) {
                     if (timerRef.current) clearInterval(timerRef.current);
                     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-
-                    // DO NOT close AudioContext/Source as we reuse them
                     setDuration(0);
                 }
 
-                // Create Blob
                 const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                audioChunksRef.current = []; // Clear immediately
-
-                // Capture Max Volume for this session BEFORE resetting
+                audioChunksRef.current = [];
                 const sessionMaxVolume = maxVolumeRef.current;
 
-                // Reset VAD state
+                // Reset VAD
                 silenceStartRef.current = null;
                 isSpeakingRef.current = false;
                 maxVolumeRef.current = 0;
 
-                // Process Audio
-                // If VAD triggered, we process as segment
-                // If manual stop, it's final
                 const isSegment = isVadTriggered;
 
-                // Queue the transcription
                 transcriptionQueueRef.current = transcriptionQueueRef.current.then(async () => {
                     if (blob.size > 0) {
-                        // We set status processing HERE immediately for final
                         if (!isSegment) setStatus('processing');
                         await processAudio(blob, isSegment, sessionMaxVolume);
-                    } else {
-                        console.log('Blob size is 0, skipping.');
                     }
                 });
 
-                // RESTART if VAD triggered
                 if (isVadTriggered) {
-                    console.log('Restarting Recorder immediately...');
                     isVadTriggered = false;
-                    isFlushing = false; // UNLOCK for next segment
+                    isFlushing = false;
                     mediaRecorder.start();
-                    console.log('Recorder restarted.');
                 } else {
-                    console.log('Manual stop, cleaning up.');
                     if (blob.size === 0) setStatus('idle');
                 }
             };
 
-            // Remove timeslice - we want the whole blob on stop
-            console.log('Starting new MediaRecorder session...');
             mediaRecorder.start();
-
             setStatus('recording');
             setWordCount(null);
-
             setDuration(0);
             const startTime = Date.now();
             timerRef.current = window.setInterval(() => {
@@ -343,7 +230,7 @@ function App() {
             }, 100);
 
         } catch (err) {
-            console.error('Error accessing microphone:', err);
+            console.error(err);
             setStatus('idle');
         }
     };
@@ -351,32 +238,26 @@ function App() {
     const stopRecording = () => {
         if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
             mediaRecorderRef.current.stop();
-            // Don't stop tracks - keep stream alive
         }
     };
 
     const processAudio = async (audioBlob: Blob, isSegment: boolean, sessionMaxVolume: number) => {
         try {
-            // Check for Silence (re-check volume for safety, though VAD handles this)
-            // 0.47 was seen in logs. Lowering to 0.1 to be safe.
             if (!isSegment && sessionMaxVolume < 0.1) {
-                console.log(`Skipping API: Volume too low (Final Check: ${sessionMaxVolume.toFixed(2)} < 0.1).`);
+                console.log('Volume too low');
                 setStatus('idle');
                 return;
             }
 
-            console.log(`[Transcribe] Sending to ${apiUrl} [Polish: ${aiPolishRef.current}]`);
-
-            // Pass aiPolish flag to Electron
             const arrayBuffer = await audioBlob.arrayBuffer();
             const data = await window.electronAPI.transcribeAudio(arrayBuffer, aiPolishRef.current);
             const text = data.text;
 
+            // Hallucination Check
             const hallucinations = ['Subtitles by', 'Thank you for watching', 'Amara.org', 'You', '1.5%', '0.5%', '%'];
             const isShortGarbage = text.length < 5 && /^[0-9.%$]+$/.test(text.trim());
 
             if (hallucinations.some(h => text.includes(h)) || (text.length < 30 && isShortGarbage)) {
-                console.log('Filtered hallucination:', text);
                 if (!isSegment) setStatus('idle');
                 return;
             }
@@ -384,69 +265,154 @@ function App() {
             if (typeof text === 'string') {
                 const trimmed = text.trim();
                 const count = trimmed.length > 0 ? trimmed.split(/\s+/).length : 0;
-                setWordCount(prev => (prev || 0) + count); // Accumulate count
+                setWordCount(prev => (prev || 0) + count);
+                setTranscript(prev => {
+                    const space = prev.length > 0 ? ' ' : '';
+                    return prev + space + trimmed;
+                });
 
                 if (count > 0) {
-                    // Smart Paste logic handles the pasting
-                    // We just need to trigger it
                     const deleteCount = hasPlaceholderRef.current ? 3 : 0;
                     await window.electronAPI.pasteText(text + ' ', autoPasteRef.current, deleteCount);
-                    hasPlaceholderRef.current = false; // Reset
+                    hasPlaceholderRef.current = false;
                 }
             }
-
             if (!isSegment) setStatus('idle');
 
         } catch (error) {
-            console.error('Transcription failed:', error);
-            if (hasPlaceholderRef.current) {
-                // Feature removed, just log
-                console.log('Error during transcription, placeholder cleanup skipped (feature removed)');
-                hasPlaceholderRef.current = false;
-            }
-            if (!isSegment) {
-                setStatus('error');
-                setTimeout(() => setStatus('idle'), 3000);
-            }
+            console.error(error);
+            if (!isSegment) setStatus('error');
+            setTimeout(() => setStatus('idle'), 3000);
         }
     };
 
-    const formatTime = (seconds: number) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-    };
 
     return (
-        <div className={`widget ${status === 'recording' ? 'recording' : ''} ${status === 'error' ? 'error' : ''}`}>
+        <div className="min-h-screen bg-transparent flex items-center justify-center p-4">
+            <AnimatePresence mode="wait">
+                {showSettings ? (
+                    <SettingsPanel
+                        key="settings"
+                        onClose={() => {
+                            setShowSettings(false);
+                            loadConfig();
+                        }}
+                    />
+                ) : !isMinimized ? (
+                    <motion.div
+                        key="full"
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        className="relative w-full max-w-2xl"
+                    >
+                        {/* Widget Container */}
+                        <div className={`relative backdrop-blur-3xl bg-black/80 rounded-3xl border border-white/10 shadow-2xl overflow-hidden transition-colors ${status === 'error' ? 'border-red-500/50' : ''}`}>
 
-            <div className={`settings-toggle ${isSettingsOpen ? 'active' : ''}`} onClick={() => setIsSettingsOpen(!isSettingsOpen)}>
-                <GearIcon />
-            </div>
+                            {/* Background ambient glow - Moved Inside */}
+                            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                                <motion.div
+                                    className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl opacity-20"
+                                    style={{ background: '#0A84FF' }}
+                                    animate={{
+                                        scale: status === 'recording' ? [1, 1.2, 1] : 1,
+                                        opacity: status === 'recording' ? [0.2, 0.3, 0.2] : 0.2,
+                                    }}
+                                    transition={{ duration: 2, repeat: Infinity }}
+                                />
+                                <motion.div
+                                    className="absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full blur-3xl opacity-20"
+                                    style={{ background: '#30D158' }}
+                                    animate={{
+                                        scale: status === 'recording' ? [1, 1.3, 1] : 1,
+                                        opacity: status === 'recording' ? [0.2, 0.25, 0.2] : 0.15,
+                                    }}
+                                    transition={{ duration: 3, repeat: Infinity, delay: 0.5 }}
+                                />
+                            </div>
 
-            {isSettingsOpen ? (
-                <SettingsForm
-                    apiUrl={apiUrl}
-                    apiKey={apiKey}
-                    autoPaste={autoPaste}
-                    aiPolish={aiPolish}
-                    onApiUrlChange={setApiUrl}
-                    onApiKeyChange={setApiKey}
-                    onAutoPasteChange={setAutoPaste}
-                    onAiPolishChange={setAiPolish}
-                    onSave={saveSettings}
-                />
-            ) : (
-                <RecorderView
-                    status={status}
-                    duration={duration}
-                    wordCount={wordCount}
-                    onToggle={handleToggle}
-                    formatTime={formatTime}
-                />
-            )}
+                            {/* Header */}
+                            <div className="relative px-6 py-4 border-b border-white/10 flex items-center justify-between draggable">
+                                <div className="flex items-center gap-3">
+                                    <div>
+                                        <h1 className="text-white/90 tracking-tight font-medium">Hush</h1>
+                                        <p className="text-white/40 text-xs">AI-Powered Dictation</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 no-drag">
+                                    <button
+                                        onClick={() => setShowSettings(true)}
+                                        className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 transition-colors flex items-center justify-center border border-white/10 cursor-pointer"
+                                    >
+                                        <Settings className="w-4 h-4 text-white/60" />
+                                    </button>
+                                    <button
+                                        onClick={() => window.electronAPI.hideWindow()}
+                                        className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 transition-colors flex items-center justify-center border border-white/10 cursor-pointer"
+                                    >
+                                        <X className="w-4 h-4 text-white/60" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Body */}
+                            <div className="relative px-8 py-12 space-y-8">
+                                <div className="flex justify-center">
+                                    <MicrophoneButton
+                                        isRecording={status === 'recording' || status === 'starting'}
+                                        onToggle={handleToggle}
+                                    />
+                                </div>
+
+                                <motion.div
+                                    className="text-center"
+                                    animate={{
+                                        opacity: status === 'recording' ? [0.6, 1, 0.6] : 1,
+                                    }}
+                                    transition={{ duration: 2, repeat: status === 'recording' ? Infinity : 0 }}
+                                >
+                                    <p className={`text-sm ${status === 'error' ? 'text-red-400' : 'text-white/80'}`}>
+                                        {status === 'idle' && 'Click to start dictation'}
+                                        {status === 'starting' && 'Warming up...'}
+                                        {status === 'recording' && 'Listening...'}
+                                        {status === 'processing' && 'Polishing & Pasting...'}
+                                        {status === 'error' && 'Error: Check Settings'}
+                                    </p>
+                                </motion.div>
+
+                                <AnimatePresence>
+                                    {(status === 'recording' || status === 'processing' || transcript) && (
+                                        <LiveTranscript transcript={transcript + (status === 'recording' ? '...' : '')} />
+                                    )}
+                                </AnimatePresence>
+                            </div>
+
+                            {/* Footer */}
+                            <div className="relative px-6 py-3 border-t border-white/10 bg-white/5">
+                                <p className="text-white/40 text-xs text-center">
+                                    Press <kbd className="px-2 py-0.5 rounded bg-white/10 border border-white/20 text-white/60 font-mono">Cmd + '</kbd> to start/stop
+                                </p>
+                            </div>
+                        </div>
+                    </motion.div>
+                ) : (
+                    <motion.button
+                        key="minimized"
+                        initial={{ opacity: 0, scale: 0.5 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.5 }}
+                        onClick={() => setIsMinimized(false)}
+                        className="relative w-16 h-16 rounded-2xl backdrop-blur-3xl bg-black/90 border border-white/10 shadow-2xl hover:scale-110 transition-transform cursor-pointer"
+                    >
+                        <div className="w-full h-full p-3">
+                            <AppIcon />
+                        </div>
+                    </motion.button>
+                )}
+            </AnimatePresence>
+
+
         </div>
     );
 }
-
-export default App;

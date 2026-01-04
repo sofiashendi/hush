@@ -157,12 +157,15 @@ export default function App() {
             // Track segment start time for minimum duration validation
             let segmentStartTime = Date.now();
 
-            let isVadTriggered = false;
             let isFlushing = false;
             const lastFlushTimeRef = { current: Date.now() };
             const lastActivityTimeRef = { current: Date.now() };
             const MIN_SEGMENT_DURATION_MS = 400; // Minimum audio duration to send
             const MIN_FLUSH_INTERVAL_MS = 1000; // Rate limit: max 1 flush per second
+
+            // Pending chunks for processing (captured by requestData)
+            let pendingBlob: Blob | null = null;
+            let pendingMaxVolume = 0;
 
             const flushSegment = () => {
                 if (isFlushing) return;
@@ -174,7 +177,6 @@ export default function App() {
                 // Rate limiting: but DON'T discard - just delay the flush
                 // Audio chunks will continue accumulating until we can flush
                 if (timeSinceLastFlush < MIN_FLUSH_INTERVAL_MS) {
-                    // Don't log every frame, only occasionally
                     return; // Audio keeps accumulating, will flush on next check after rate limit expires
                 }
 
@@ -193,14 +195,17 @@ export default function App() {
                     audioChunksRef.current = [];
                     segmentStartTime = Date.now();
                     lastFlushTimeRef.current = Date.now();
+                    maxVolumeRef.current = 0;
                     return;
                 }
 
                 console.log(`[VAD] Flushing segment. MaxRMS: ${maxVolumeRef.current.toFixed(2)}, Duration: ${segmentDuration}ms`);
                 isFlushing = true;
-                isVadTriggered = true;
+                pendingMaxVolume = maxVolumeRef.current;
+
+                // Use requestData() instead of stop() - this gets current chunks WITHOUT stopping recording
                 if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-                    mediaRecorderRef.current.stop();
+                    mediaRecorderRef.current.requestData();
                 } else {
                     isFlushing = false;
                 }
@@ -244,47 +249,60 @@ export default function App() {
             mediaRecorderRef.current = mediaRecorder;
 
             mediaRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) audioChunksRef.current.push(e.data);
+                if (e.data.size > 0) {
+                    if (isFlushing) {
+                        // This is data from requestData() - process it
+                        audioChunksRef.current.push(e.data);
+                        pendingBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                        audioChunksRef.current = []; // Clear for next segment
+
+                        const blobToProcess = pendingBlob;
+                        const volumeToProcess = pendingMaxVolume;
+
+                        // Reset state for next segment
+                        segmentStartTime = Date.now();
+                        lastFlushTimeRef.current = Date.now();
+                        silenceStartRef.current = null;
+                        isSpeakingRef.current = false;
+                        maxVolumeRef.current = 0;
+                        isFlushing = false;
+                        pendingBlob = null;
+
+                        // Process asynchronously
+                        transcriptionQueueRef.current = transcriptionQueueRef.current.then(async () => {
+                            if (blobToProcess.size > 0) {
+                                await processAudio(blobToProcess, true, volumeToProcess);
+                            }
+                        });
+                    } else {
+                        // Normal accumulation during recording
+                        audioChunksRef.current.push(e.data);
+                    }
+                }
             };
 
             mediaRecorder.onstop = async () => {
-                if (!isVadTriggered) {
-                    if (timerRef.current) clearInterval(timerRef.current);
-                    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-                    setDuration(0);
-                }
+                // Only called when user stops recording (not during VAD flushes)
+                if (timerRef.current) clearInterval(timerRef.current);
+                if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+                setDuration(0);
 
                 const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
                 audioChunksRef.current = [];
                 const sessionMaxVolume = maxVolumeRef.current;
 
-                if (!isVadTriggered) {
-                    silenceStartRef.current = null;
-                    isSpeakingRef.current = false;
-                    maxVolumeRef.current = 0;
-                }
-
-                const isSegment = isVadTriggered;
+                silenceStartRef.current = null;
+                isSpeakingRef.current = false;
+                maxVolumeRef.current = 0;
 
                 transcriptionQueueRef.current = transcriptionQueueRef.current.then(async () => {
                     if (blob.size > 0) {
-                        if (!isSegment) setStatus('processing');
-                        await processAudio(blob, isSegment, sessionMaxVolume);
+                        setStatus('processing');
+                        await processAudio(blob, false, sessionMaxVolume);
+                    } else {
+                        setStatus('idle');
                     }
                 });
-
-                if (isVadTriggered) {
-                    isVadTriggered = false;
-                    isFlushing = false;
-                    lastFlushTimeRef.current = Date.now();
-                    segmentStartTime = Date.now();
-                    silenceStartRef.current = null;
-                    isSpeakingRef.current = false; // Reset speaking state for new segment
-                    maxVolumeRef.current = 0; // Reset volume for new segment
-                    mediaRecorder.start();
-                } else {
-                    if (blob.size === 0) setStatus('idle');
-                }
             };
 
             mediaRecorder.start();

@@ -1,6 +1,6 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Copy, Check } from 'lucide-react';
 
 interface LiveTranscriptProps {
   transcript: string;
@@ -11,6 +11,18 @@ interface LiveTranscriptProps {
 export function LiveTranscript({ transcript, isRecording, wordCount }: LiveTranscriptProps) {
   console.log('[LiveTranscript Render] Len:', transcript.length, 'Msg:', transcript.substring(0, 20));
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    if (!transcript) return;
+    try {
+      await navigator.clipboard.writeText(transcript);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
 
   // Auto-scroll to bottom when transcript updates
   useEffect(() => {
@@ -34,10 +46,25 @@ export function LiveTranscript({ transcript, isRecording, wordCount }: LiveTrans
           <span className="text-white/60 text-xs tracking-wide uppercase">Live Transcript</span>
         </div>
 
-        {/* Word Count */}
-        {wordCount !== null && (
-          <span className="text-white/40 text-xs font-mono">{wordCount} words</span>
-        )}
+        {/* Word Count & Copy */}
+        <div className="flex items-center gap-3">
+          {wordCount !== null && (
+            <span className="text-white/40 text-xs font-mono">{wordCount} words</span>
+          )}
+          {transcript && (
+            <button
+              onClick={handleCopy}
+              className="p-1 rounded hover:bg-white/10 transition-colors cursor-pointer"
+              title={copied ? 'Copied!' : 'Copy transcript'}
+            >
+              {copied ? (
+                <Check className="w-3.5 h-3.5 text-green-400" />
+              ) : (
+                <Copy className="w-3.5 h-3.5 text-white/40 hover:text-white/60" />
+              )}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Transcript container */}

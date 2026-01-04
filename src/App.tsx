@@ -166,7 +166,7 @@ export default function App() {
                 if (isFlushing) return;
 
                 // Don't flush if it was just silence (unless it's the final stop)
-                const isSilence = maxVolumeRef.current < 0.5; // Strict silence voltage check
+                const isSilence = maxVolumeRef.current < 3.0; // Strict silence voltage check
 
                 // If it's silence and we haven't spoken yet, just reset.
                 if (isSilence && !isSpeakingRef.current) {
@@ -194,21 +194,22 @@ export default function App() {
 
                 const now = Date.now();
 
-                // VAD Logic (RMS 0.5 for Activity - Sensitivity restored)
-                if (rms > 0.5) {
+                // VAD Logic (RMS 3.0 for Activity - Safe default)
+                if (rms > 3.0) {
                     lastActivityTimeRef.current = now;
                 }
 
-                // Threshold for Speech (10.0 - distinguish from silence floor)
-                if (rms > 2.0) {
+                // Threshold for Speech (10.0 - Speech start)
+                // Raised back to 10.0 to avoid breathing noise
+                if (rms > 10.0) {
                     silenceStartRef.current = null;
                     isSpeakingRef.current = true;
                 } else {
                     // Silence logic
                     if (!silenceStartRef.current) silenceStartRef.current = now;
-                    // Wait 2000ms (2 seconds) of silence before flushing.
-                    // This allows for natural pauses in speech.
-                    else if (now - silenceStartRef.current > 2000 && isSpeakingRef.current) {
+                    // Wait 1000ms (1 second) of silence before flushing.
+                    // Snappy response.
+                    else if (now - silenceStartRef.current > 1000 && isSpeakingRef.current) {
                         flushSegment();
                     }
                 }
@@ -290,7 +291,7 @@ export default function App() {
         try {
             // Filter out silence/noise segments to prevent hallucinations
             // Even segments need some volume presence
-            if (sessionMaxVolume < 0.5) {
+            if (sessionMaxVolume < 3.0) {
                 console.log('[Process] Skipped low volume segment:', sessionMaxVolume);
                 if (!isSegment) setStatus('idle');
                 return;
@@ -306,10 +307,14 @@ export default function App() {
             // Silent Clean - No Logs
             const phrasesToRemove = [
                 'Subtitles by', 'Thank you for watching', 'Amara.org', 'MBC News', 'Kim Ji-hoon', 'MBC', 'News',
-                'Thank you.', 'you.', 'Okay.', 'Okay'
+                'Thank you.', 'you.', 'Okay.', 'Okay', 'you'
             ];
             phrasesToRemove.forEach(p => {
-                cleanedText = cleanedText.replace(new RegExp(p, 'gi'), '');
+                if (p === 'you') {
+                    cleanedText = cleanedText.replace(new RegExp('\\b' + p + '\\b', 'gi'), '');
+                } else {
+                    cleanedText = cleanedText.replace(new RegExp(p, 'gi'), '');
+                }
             });
 
             // 2. Remove non-ASCII (Chinese/Korean/Symbols) if mostly garbage

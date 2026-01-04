@@ -25,8 +25,17 @@ const createWindow = () => {
     const iconPath = path.join(__dirname, '../public/icon.png');
 
     // Set Dock Icon (macOS)
-    // REMOVED: Caused SetApplicationIsDaemon error. Icon is handled by app bundle.
-    // if (process.platform === 'darwin') { ... }
+    if (process.platform === 'darwin') {
+        if (fs.existsSync(iconPath)) {
+            try {
+                app.dock?.setIcon(iconPath);
+            } catch (err) {
+                console.error("Critical: Failed to set dock icon", err);
+            }
+        } else {
+            console.log("No icon found at", iconPath);
+        }
+    }
 
     // Create the browser window.
     mainWindow = new BrowserWindow({

@@ -517,7 +517,6 @@ export default function App() {
                                                     isRecording={status === 'recording' || status === 'starting'}
                                                     wordCount={null}
                                                     label="Raw Whisper"
-                                                    variant="amber"
                                                 />
                                             )}
                                             {/* Polished Panel */}

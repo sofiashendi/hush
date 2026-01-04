@@ -2,6 +2,10 @@
 
 This document provides technical context for AI Agents working on this codebase. It complements the `README.md` by focusing on architecture and internals.
 
+## IMPORTANT
+
+1- Never mess with the threshold of 10. It should never go below 10.
+
 ## Architecture
 The application follows a **Client-Serverless** model:
 

@@ -30,6 +30,7 @@ export default function App() {
     const timerRef = useRef<number | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
+    const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
     const maxVolumeRef = useRef<number>(0);
     const animationFrameRef = useRef<number | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -67,13 +68,11 @@ export default function App() {
     };
 
     useEffect(() => {
-        // Logger
         const originalLog = console.log;
         const originalError = console.error;
         console.log = (...args) => { originalLog(...args); window.electronAPI.log(args.map(a => String(a)).join(' ')); };
         console.error = (...args) => { originalError(...args); window.electronAPI.log('ERROR: ' + args.map(a => String(a)).join(' ')); };
 
-        // Toggle Listener
         const removeToggleListener = window.electronAPI.onToggleRecording(() => {
             handleToggle();
         });
@@ -82,13 +81,16 @@ export default function App() {
         initAudio();
 
         return () => {
+            // Restore console to prevent N-wrapping on HMR
+            console.log = originalLog;
+            console.error = originalError;
+
             removeToggleListener();
             if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
             if (audioContextRef.current) audioContextRef.current.close();
         };
     }, []);
 
-    // Persistent Audio Init
     const initAudio = async () => {
         if (streamRef.current) return;
         try {
@@ -98,7 +100,8 @@ export default function App() {
             const analyser = audioContext.createAnalyser();
             const source = audioContext.createMediaStreamSource(stream);
             source.connect(analyser);
-            analyser.fftSize = 256;
+            sourceRef.current = source; // Keep ref
+            analyser.fftSize = 2048;
             audioContextRef.current = audioContext;
             analyserRef.current = analyser;
             console.log('Microphone ready.');
@@ -108,27 +111,36 @@ export default function App() {
     };
 
     const handleToggle = () => {
+        console.log('[HandleToggle] Triggered. StatusRef:', statusRef.current);
         if (showSettings) return;
         const now = Date.now();
-        if (now - lastToggleTimeRef.current < 250) return;
+        if (now - lastToggleTimeRef.current < 250) {
+            console.log('[HandleToggle] Debounced');
+            return;
+        }
         lastToggleTimeRef.current = now;
 
-        if (statusRef.current === 'recording') stopRecording();
-        else if (statusRef.current === 'idle') startRecording();
+        if (statusRef.current === 'recording') {
+            console.log('[HandleToggle] Stopping...');
+            stopRecording();
+        }
+        else if (statusRef.current === 'idle') {
+            console.log('[HandleToggle] Starting...');
+            startRecording();
+        }
     };
 
     const startRecording = async () => {
         if (statusRef.current !== 'idle') return;
         setTranscript('');
 
-        // Re-init Logic if needed (similar to old App.tsx but condensed)
         if (!streamRef.current || !audioContextRef.current) {
-            // Fallback init
             await initAudio();
             if (!streamRef.current) return;
         }
 
         setStatus('starting');
+        statusRef.current = 'starting'; // Manual sync for immediate loop check
 
         try {
             const stream = streamRef.current!;
@@ -142,11 +154,29 @@ export default function App() {
             isSpeakingRef.current = false;
             audioChunksRef.current = [];
 
+            // Blur to ensure global shortcuts work and focus isn't trapped
+            window.blur();
+
             let isVadTriggered = false;
             let isFlushing = false;
+            const lastFlushTimeRef = { current: Date.now() };
+            const lastActivityTimeRef = { current: Date.now() };
 
             const flushSegment = () => {
                 if (isFlushing) return;
+
+                // Don't flush if it was just silence (unless it's the final stop)
+                const isSilence = maxVolumeRef.current < 0.5; // Strict silence voltage check
+
+                // If it's silence and we haven't spoken yet, just reset.
+                if (isSilence && !isSpeakingRef.current) {
+                    // Drop this segment entirely
+                    audioChunksRef.current = [];
+                    lastFlushTimeRef.current = Date.now();
+                    return;
+                }
+
+                console.log(`[VAD] Flushing segment. MaxRMS: ${maxVolumeRef.current.toFixed(2)}`);
                 isFlushing = true;
                 isVadTriggered = true;
                 if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
@@ -163,12 +193,22 @@ export default function App() {
                 if (rms > maxVolumeRef.current) maxVolumeRef.current = rms;
 
                 const now = Date.now();
-                if (rms > 10.0) {
+
+                // VAD Logic (RMS 0.5 for Activity - Sensitivity restored)
+                if (rms > 0.5) {
+                    lastActivityTimeRef.current = now;
+                }
+
+                // Threshold for Speech (10.0 - distinguish from silence floor)
+                if (rms > 2.0) {
                     silenceStartRef.current = null;
                     isSpeakingRef.current = true;
                 } else {
+                    // Silence logic
                     if (!silenceStartRef.current) silenceStartRef.current = now;
-                    else if (now - silenceStartRef.current > 700 && isSpeakingRef.current) {
+                    // Wait 2000ms (2 seconds) of silence before flushing.
+                    // This allows for natural pauses in speech.
+                    else if (now - silenceStartRef.current > 2000 && isSpeakingRef.current) {
                         flushSegment();
                     }
                 }
@@ -197,10 +237,11 @@ export default function App() {
                 audioChunksRef.current = [];
                 const sessionMaxVolume = maxVolumeRef.current;
 
-                // Reset VAD
-                silenceStartRef.current = null;
-                isSpeakingRef.current = false;
-                maxVolumeRef.current = 0;
+                if (!isVadTriggered) {
+                    silenceStartRef.current = null;
+                    isSpeakingRef.current = false;
+                    maxVolumeRef.current = 0;
+                }
 
                 const isSegment = isVadTriggered;
 
@@ -214,6 +255,8 @@ export default function App() {
                 if (isVadTriggered) {
                     isVadTriggered = false;
                     isFlushing = false;
+                    lastFlushTimeRef.current = Date.now();
+                    silenceStartRef.current = null;
                     mediaRecorder.start();
                 } else {
                     if (blob.size === 0) setStatus('idle');
@@ -222,8 +265,10 @@ export default function App() {
 
             mediaRecorder.start();
             setStatus('recording');
+            statusRef.current = 'recording'; // Manual sync for immediate loop check
             setWordCount(null);
             setDuration(0);
+
             const startTime = Date.now();
             timerRef.current = window.setInterval(() => {
                 setDuration(Math.floor((Date.now() - startTime) / 1000));
@@ -243,9 +288,11 @@ export default function App() {
 
     const processAudio = async (audioBlob: Blob, isSegment: boolean, sessionMaxVolume: number) => {
         try {
-            if (!isSegment && sessionMaxVolume < 0.1) {
-                console.log('Volume too low');
-                setStatus('idle');
+            // Filter out silence/noise segments to prevent hallucinations
+            // Even segments need some volume presence
+            if (sessionMaxVolume < 0.5) {
+                console.log('[Process] Skipped low volume segment:', sessionMaxVolume);
+                if (!isSegment) setStatus('idle');
                 return;
             }
 
@@ -253,27 +300,46 @@ export default function App() {
             const data = await window.electronAPI.transcribeAudio(arrayBuffer, aiPolishRef.current);
             const text = data.text;
 
-            // Hallucination Check
-            const hallucinations = ['Subtitles by', 'Thank you for watching', 'Amara.org', 'You', '1.5%', '0.5%', '%'];
-            const isShortGarbage = text.length < 5 && /^[0-9.%$]+$/.test(text.trim());
+            let cleanedText = text;
 
-            if (hallucinations.some(h => text.includes(h)) || (text.length < 30 && isShortGarbage)) {
+            // 1. Remove known hallucination phrases (case insensitive)
+            // Silent Clean - No Logs
+            const phrasesToRemove = [
+                'Subtitles by', 'Thank you for watching', 'Amara.org', 'MBC News', 'Kim Ji-hoon', 'MBC', 'News',
+                'Thank you.', 'you.', 'Okay.', 'Okay'
+            ];
+            phrasesToRemove.forEach(p => {
+                cleanedText = cleanedText.replace(new RegExp(p, 'gi'), '');
+            });
+
+            // 2. Remove non-ASCII (Chinese/Korean/Symbols) if mostly garbage
+            cleanedText = cleanedText.replace(/[\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\uFF00-\uFFEF\u4E00-\u9FAF\u2605-\u2606\u2190-\u2195\u203B]/g, '');
+
+            // 3. Remove repetitive "you you you" patterns
+            cleanedText = cleanedText.replace(/\b(\w+)( \1){2,}\b/gi, '');
+
+            cleanedText = cleanedText.trim();
+
+            const isShortGarbage = cleanedText.length < 5 && /^[0-9.%$]+$/.test(cleanedText);
+
+            if (cleanedText.length === 0 || isShortGarbage) {
+                console.log('[Process] Filtered empty/garbage:', text);
                 if (!isSegment) setStatus('idle');
                 return;
             }
 
-            if (typeof text === 'string') {
-                const trimmed = text.trim();
-                const count = trimmed.length > 0 ? trimmed.split(/\s+/).length : 0;
-                setWordCount(prev => (prev || 0) + count);
-                setTranscript(prev => {
-                    const space = prev.length > 0 ? ' ' : '';
-                    return prev + space + trimmed;
-                });
+            if (typeof cleanedText === 'string') {
+                const count = cleanedText.split(/\s+/).length;
 
                 if (count > 0) {
+                    setWordCount(prev => (prev || 0) + count);
+                    setTranscript(prev => {
+                        const space = prev.length > 0 ? ' ' : '';
+                        return prev + space + cleanedText;
+                    });
+
                     const deleteCount = hasPlaceholderRef.current ? 3 : 0;
-                    await window.electronAPI.pasteText(text + ' ', autoPasteRef.current, deleteCount);
+                    await window.electronAPI.pasteText(cleanedText + ' ', autoPasteRef.current, deleteCount);
                     hasPlaceholderRef.current = false;
                 }
             }
@@ -285,6 +351,8 @@ export default function App() {
             setTimeout(() => setStatus('idle'), 3000);
         }
     };
+
+    console.log('[App Render] Status:', status, 'Transcript Len:', transcript.length);
 
 
     return (
@@ -306,10 +374,8 @@ export default function App() {
                         exit={{ opacity: 0, scale: 0.9 }}
                         className="relative w-full max-w-2xl"
                     >
-                        {/* Widget Container */}
                         <div className={`relative backdrop-blur-3xl bg-black/80 rounded-3xl border border-white/10 shadow-2xl overflow-hidden transition-colors ${status === 'error' ? 'border-red-500/50' : ''}`}>
-
-                            {/* Background ambient glow - Moved Inside */}
+                            {/* Background */}
                             <div className="absolute inset-0 overflow-hidden pointer-events-none">
                                 <motion.div
                                     className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl opacity-20"
@@ -339,18 +405,11 @@ export default function App() {
                                         <p className="text-white/40 text-xs">AI-Powered Dictation</p>
                                     </div>
                                 </div>
-
                                 <div className="flex items-center gap-2 no-drag">
-                                    <button
-                                        onClick={() => setShowSettings(true)}
-                                        className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 transition-colors flex items-center justify-center border border-white/10 cursor-pointer"
-                                    >
+                                    <button onClick={() => setShowSettings(true)} className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 transition-colors flex items-center justify-center border border-white/10 cursor-pointer">
                                         <Settings className="w-4 h-4 text-white/60" />
                                     </button>
-                                    <button
-                                        onClick={() => window.electronAPI.hideWindow()}
-                                        className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 transition-colors flex items-center justify-center border border-white/10 cursor-pointer"
-                                    >
+                                    <button onClick={() => window.electronAPI.hideWindow()} className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 transition-colors flex items-center justify-center border border-white/10 cursor-pointer">
                                         <X className="w-4 h-4 text-white/60" />
                                     </button>
                                 </div>
@@ -383,7 +442,11 @@ export default function App() {
 
                                 <AnimatePresence>
                                     {(status === 'recording' || status === 'processing' || transcript) && (
-                                        <LiveTranscript transcript={transcript + (status === 'recording' ? '...' : '')} />
+                                        <LiveTranscript
+                                            transcript={transcript}
+                                            isRecording={status === 'recording' || status === 'starting'}
+                                            wordCount={wordCount}
+                                        />
                                     )}
                                 </AnimatePresence>
                             </div>
@@ -399,20 +462,13 @@ export default function App() {
                 ) : (
                     <motion.button
                         key="minimized"
-                        initial={{ opacity: 0, scale: 0.5 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.5 }}
                         onClick={() => setIsMinimized(false)}
                         className="relative w-16 h-16 rounded-2xl backdrop-blur-3xl bg-black/90 border border-white/10 shadow-2xl hover:scale-110 transition-transform cursor-pointer"
                     >
-                        <div className="w-full h-full p-3">
-                            <AppIcon />
-                        </div>
+                        <div className="w-full h-full p-3"><AppIcon /></div>
                     </motion.button>
                 )}
             </AnimatePresence>
-
-
         </div>
     );
 }

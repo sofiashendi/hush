@@ -25,17 +25,8 @@ const createWindow = () => {
     const iconPath = path.join(__dirname, '../public/icon.png');
 
     // Set Dock Icon (macOS)
-    if (process.platform === 'darwin') {
-        if (fs.existsSync(iconPath)) {
-            try {
-                app.dock?.setIcon(iconPath);
-            } catch (err) {
-                console.error("Critical: Failed to set dock icon", err);
-            }
-        } else {
-            console.log("No icon found at", iconPath);
-        }
-    }
+    // REMOVED: Caused SetApplicationIsDaemon error. Icon is handled by app bundle.
+    // if (process.platform === 'darwin') { ... }
 
     // Create the browser window.
     mainWindow = new BrowserWindow({
@@ -132,6 +123,11 @@ ipcMain.handle('set-tray-title', (event, title) => {
 });
 
 app.whenReady().then(() => {
+    // Explicitly show dock to prevent SetApplicationIsDaemon errors
+    if (process.platform === 'darwin') {
+        app.dock?.show();
+    }
+
     createWindow();
 
     // Register a 'Command+\'' (Single Quote) shortcut listener.

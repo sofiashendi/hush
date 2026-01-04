@@ -309,11 +309,17 @@ export default function App() {
                 isSpeakingRef.current = false;
                 maxVolumeRef.current = 0;
 
+                // Only send to API if there's meaningful audio content
+                // Minimum 1KB to avoid "Invalid input" errors from tiny/empty blobs
+                const MIN_BLOB_SIZE = 1000;
+                const hasMeaningfulAudio = blob.size > MIN_BLOB_SIZE && sessionMaxVolume > 3.0;
+
                 transcriptionQueueRef.current = transcriptionQueueRef.current.then(async () => {
-                    if (blob.size > 0) {
+                    if (hasMeaningfulAudio) {
                         setStatus('processing');
                         await processAudio(blob, false, sessionMaxVolume);
                     } else {
+                        console.log(`[Stop] Skipped empty/silent final segment: size=${blob.size}, volume=${sessionMaxVolume.toFixed(2)}`);
                         setStatus('idle');
                     }
                 });

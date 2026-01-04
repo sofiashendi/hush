@@ -239,6 +239,20 @@ export default function App() {
                     }
                 }
 
+                // Safety limits: Force flush to prevent hitting CF's 25MB limit
+                // ~5MB = ~30 minutes of WebM audio
+                const MAX_SEGMENT_SIZE_BYTES = 5 * 1024 * 1024;
+                const MAX_SEGMENT_DURATION_MS = 30 * 60 * 1000; // 30 minutes
+                const currentSize = audioChunksRef.current.reduce((sum, chunk) => sum + chunk.size, 0);
+                const segmentAge = now - segmentStartTime;
+
+                if ((currentSize > MAX_SEGMENT_SIZE_BYTES || segmentAge > MAX_SEGMENT_DURATION_MS) && audioChunksRef.current.length > 0) {
+                    console.log(`[VAD] Safety flush: Size=${(currentSize / 1024 / 1024).toFixed(1)}MB, Age=${Math.floor(segmentAge / 1000)}s`);
+                    // Force set speaking to true so flushSegment doesn't skip
+                    isSpeakingRef.current = true;
+                    flushSegment();
+                }
+
                 if (statusRef.current === 'recording' || statusRef.current === 'starting') {
                     animationFrameRef.current = requestAnimationFrame(checkVolume);
                 }

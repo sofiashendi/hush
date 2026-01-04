@@ -433,22 +433,33 @@ export default function App() {
                             {/* Background */}
                             <div className="absolute inset-0 overflow-hidden pointer-events-none">
                                 <motion.div
-                                    className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl opacity-20"
+                                    className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl"
                                     style={{ background: '#0A84FF' }}
+                                    initial={{ opacity: 0.1, scale: 1 }}
                                     animate={{
                                         scale: status === 'recording' ? [1, 1.2, 1] : 1,
-                                        opacity: status === 'recording' ? [0.2, 0.3, 0.2] : 0.2,
+                                        opacity: status === 'recording' ? [0.2, 0.3, 0.2] : 0.1,
                                     }}
-                                    transition={{ duration: 2, repeat: Infinity }}
+                                    transition={{
+                                        duration: 2,
+                                        repeat: status === 'recording' ? Infinity : 0,
+                                        ease: 'easeInOut'
+                                    }}
                                 />
                                 <motion.div
-                                    className="absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full blur-3xl opacity-20"
+                                    className="absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full blur-3xl"
                                     style={{ background: '#30D158' }}
+                                    initial={{ opacity: 0.08, scale: 1 }}
                                     animate={{
                                         scale: status === 'recording' ? [1, 1.3, 1] : 1,
-                                        opacity: status === 'recording' ? [0.2, 0.25, 0.2] : 0.15,
+                                        opacity: status === 'recording' ? [0.2, 0.25, 0.2] : 0.08,
                                     }}
-                                    transition={{ duration: 3, repeat: Infinity, delay: 0.5 }}
+                                    transition={{
+                                        duration: 3,
+                                        repeat: status === 'recording' ? Infinity : 0,
+                                        delay: 0.5,
+                                        ease: 'easeInOut'
+                                    }}
                                 />
                             </div>
 

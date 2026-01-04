@@ -154,29 +154,49 @@ export default function App() {
             isSpeakingRef.current = false;
             audioChunksRef.current = [];
 
-            // Blur to ensure global shortcuts work and focus isn't trapped
-            window.blur();
+            // Track segment start time for minimum duration validation
+            let segmentStartTime = Date.now();
 
             let isVadTriggered = false;
             let isFlushing = false;
             const lastFlushTimeRef = { current: Date.now() };
             const lastActivityTimeRef = { current: Date.now() };
+            const MIN_SEGMENT_DURATION_MS = 400; // Minimum audio duration to send
+            const MIN_FLUSH_INTERVAL_MS = 1000; // Rate limit: max 1 flush per second
 
             const flushSegment = () => {
                 if (isFlushing) return;
 
-                // Don't flush if it was just silence (unless it's the final stop)
-                const isSilence = maxVolumeRef.current < 3.0; // Strict silence voltage check
+                const now = Date.now();
+                const segmentDuration = now - segmentStartTime;
+                const timeSinceLastFlush = now - lastFlushTimeRef.current;
+
+                // Rate limiting: but DON'T discard - just delay the flush
+                // Audio chunks will continue accumulating until we can flush
+                if (timeSinceLastFlush < MIN_FLUSH_INTERVAL_MS) {
+                    // Don't log every frame, only occasionally
+                    return; // Audio keeps accumulating, will flush on next check after rate limit expires
+                }
+
+                // Minimum duration check: prevent sending very short audio
+                if (segmentDuration < MIN_SEGMENT_DURATION_MS) {
+                    console.log(`[VAD] Segment too short: ${segmentDuration}ms`);
+                    return;
+                }
+
+                // Don't flush if it was just silence (stricter threshold)
+                const isSilence = maxVolumeRef.current < 8.0;
 
                 // If it's silence and we haven't spoken yet, just reset.
                 if (isSilence && !isSpeakingRef.current) {
                     // Drop this segment entirely
                     audioChunksRef.current = [];
+                    segmentStartTime = Date.now();
                     lastFlushTimeRef.current = Date.now();
                     return;
                 }
 
-                console.log(`[VAD] Flushing segment. MaxRMS: ${maxVolumeRef.current.toFixed(2)}`);
+                console.log(`[VAD] Flushing segment. MaxRMS: ${maxVolumeRef.current.toFixed(2)}, Duration: ${segmentDuration}ms`);
                 isFlushing = true;
                 isVadTriggered = true;
                 if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
@@ -199,9 +219,9 @@ export default function App() {
                     lastActivityTimeRef.current = now;
                 }
 
-                // Threshold for Speech (10.0 - Speech start)
-                // Raised back to 10.0 to avoid breathing noise
-                if (rms > 10.0) {
+                // Threshold for Speech (20.0 - Speech start)
+                // Raised to 20.0 to avoid ambient noise and breathing
+                if (rms > 20.0) {
                     silenceStartRef.current = null;
                     isSpeakingRef.current = true;
                 } else {
@@ -257,7 +277,10 @@ export default function App() {
                     isVadTriggered = false;
                     isFlushing = false;
                     lastFlushTimeRef.current = Date.now();
+                    segmentStartTime = Date.now();
                     silenceStartRef.current = null;
+                    isSpeakingRef.current = false; // Reset speaking state for new segment
+                    maxVolumeRef.current = 0; // Reset volume for new segment
                     mediaRecorder.start();
                 } else {
                     if (blob.size === 0) setStatus('idle');
@@ -304,17 +327,12 @@ export default function App() {
             let cleanedText = text;
 
             // 1. Remove known hallucination phrases (case insensitive)
-            // Silent Clean - No Logs
+            // Only filter CLEAR hallucination patterns, not single common words
             const phrasesToRemove = [
-                'Subtitles by', 'Thank you for watching', 'Amara.org', 'MBC News', 'Kim Ji-hoon', 'MBC', 'News',
-                'Thank you.', 'you.', 'Okay.', 'Okay', 'you'
+                'Subtitles by', 'Thank you for watching', 'Amara.org', 'MBC News', 'Kim Ji-hoon'
             ];
             phrasesToRemove.forEach(p => {
-                if (p === 'you') {
-                    cleanedText = cleanedText.replace(new RegExp('\\b' + p + '\\b', 'gi'), '');
-                } else {
-                    cleanedText = cleanedText.replace(new RegExp(p, 'gi'), '');
-                }
+                cleanedText = cleanedText.replace(new RegExp(p, 'gi'), '');
             });
 
             // 2. Remove non-ASCII (Chinese/Korean/Symbols) if mostly garbage

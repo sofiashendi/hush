@@ -13,6 +13,7 @@ export default function App() {
     const [duration, setDuration] = useState(0);
     const [wordCount, setWordCount] = useState<number | null>(null);
     const [transcript, setTranscript] = useState('');
+    const [rawTranscript, setRawTranscript] = useState(''); // Raw Whisper output for comparison
 
     // UI State
     const [isMinimized, setIsMinimized] = useState(false);
@@ -133,6 +134,7 @@ export default function App() {
     const startRecording = async () => {
         if (statusRef.current !== 'idle') return;
         setTranscript('');
+        setRawTranscript('');
 
         if (!streamRef.current || !audioContextRef.current) {
             await initAudio();
@@ -359,8 +361,9 @@ export default function App() {
             }
 
             const arrayBuffer = await audioBlob.arrayBuffer();
-            const data = await window.electronAPI.transcribeAudio(arrayBuffer, aiPolishRef.current);
+            const data = await window.electronAPI.transcribeAudio(arrayBuffer, aiPolishRef.current) as { text: string; raw?: string };
             const text = data.text;
+            const rawText = data.raw || text; // Raw Whisper output for comparison
 
             let cleanedText = text;
 
@@ -397,6 +400,11 @@ export default function App() {
                     setTranscript(prev => {
                         const space = prev.length > 0 ? ' ' : '';
                         return prev + space + cleanedText;
+                    });
+                    // Also update raw transcript for comparison
+                    setRawTranscript(prev => {
+                        const space = prev.length > 0 ? ' ' : '';
+                        return prev + space + rawText;
                     });
 
                     const deleteCount = hasPlaceholderRef.current ? 3 : 0;
@@ -514,11 +522,29 @@ export default function App() {
 
                                 <AnimatePresence>
                                     {(status === 'recording' || status === 'processing' || transcript) && (
-                                        <LiveTranscript
-                                            transcript={transcript}
-                                            isRecording={status === 'recording' || status === 'starting'}
-                                            wordCount={wordCount}
-                                        />
+                                        <>
+                                            {/* Comparison Panel - Raw Whisper output */}
+                                            {aiPolish && rawTranscript && rawTranscript !== transcript && (
+                                                <motion.div
+                                                    initial={{ opacity: 0, height: 0 }}
+                                                    animate={{ opacity: 1, height: 'auto' }}
+                                                    exit={{ opacity: 0, height: 0 }}
+                                                    className="mb-3"
+                                                >
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <span className="text-amber-400/60 text-xs tracking-wide uppercase">Raw Whisper</span>
+                                                    </div>
+                                                    <div className="backdrop-blur-xl bg-amber-500/5 rounded-xl border border-amber-500/20 p-3 max-h-24 overflow-y-auto">
+                                                        <p className="text-amber-200/70 text-xs font-mono">{rawTranscript}</p>
+                                                    </div>
+                                                </motion.div>
+                                            )}
+                                            <LiveTranscript
+                                                transcript={transcript}
+                                                isRecording={status === 'recording' || status === 'starting'}
+                                                wordCount={wordCount}
+                                            />
+                                        </>
                                     )}
                                 </AnimatePresence>
                             </div>

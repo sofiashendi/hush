@@ -40,9 +40,12 @@ This app requires a Cloudflare Worker to handle audio transcription using the `@
     -   Paste the following into `worker.js`. This code handles authentication and calls the Whisper AI model.
 
     ```javascript
+    // Whisper prompt - provides context to help with transcription accuracy
+    const WHISPER_PROMPT = "Natural conversational dictation. The speaker is thinking aloud, drafting notes, code comments, or composing messages. Proper nouns may include tech terms.";
+
     export default {
       async fetch(request, env) {
-        // 1. CORS Headers
+        // CORS Headers
         const corsHeaders = {
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -51,19 +54,24 @@ This app requires a Cloudflare Worker to handle audio transcription using the `@
 
         // Handle Preflight
         if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+        if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
 
-        // 2. Authentication
+        // Authentication
         const apiKey = request.headers.get("Authorization");
-        if (!apiKey || apiKey !== env.WORKER_API_KEY) {
+        if (!env.WORKER_API_KEY || apiKey !== env.WORKER_API_KEY) {
           return new Response("Unauthorized", { status: 401, headers: corsHeaders });
         }
 
-        // 3. Process Audio
-        if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
-
         try {
           const audioBuffer = await request.arrayBuffer();
-          
+
+          // Validate minimum audio size (~50KB = ~2 seconds of audio)
+          // Whisper needs enough audio context to process
+          const MIN_AUDIO_SIZE = 50000;
+          if (audioBuffer.byteLength < MIN_AUDIO_SIZE) {
+            return Response.json({ text: "" }, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+
           // Convert to Base64 (required for whisper-large-v3-turbo)
           const uint8Array = new Uint8Array(audioBuffer);
           let binary = '';
@@ -76,14 +84,27 @@ This app requires a Cloudflare Worker to handle audio transcription using the `@
           const response = await env.AI.run("@cf/openai/whisper-large-v3-turbo", {
             audio: base64Audio,
             vad_filter: true,
-            initial_prompt: "Natural conversational dictation.",
+            initial_prompt: WHISPER_PROMPT,
           });
 
-          return new Response(JSON.stringify({ text: response.text || "" }), { 
+          let transcription = response.text || "";
+
+          // Minimal hallucination filtering (whisper-large-v3-turbo is already very good)
+          // Only filter ENTIRE transcriptions that are clearly not real speech
+          const HALLUCINATION_PATTERNS = [
+            /^\s*\.+\s*$/,  // Just dots/periods
+            /^[\u3000-\u9FAF\uFF00-\uFFEF\s]+$/,  // Pure CJK characters (when user speaks English)
+          ];
+
+          if (transcription && HALLUCINATION_PATTERNS.some(p => p.test(transcription.trim()))) {
+            transcription = "";
+          }
+
+          return Response.json({ text: transcription }, { 
             headers: { ...corsHeaders, "Content-Type": "application/json" } 
           });
         } catch (error) {
-          return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
+          return Response.json({ error: error.message }, { status: 500, headers: corsHeaders });
         }
       },
     };
@@ -96,7 +117,6 @@ This app requires a Cloudflare Worker to handle audio transcription using the `@
     -   Add a Secret variable named `WORKER_API_KEY` with a strong password.
 
 4.  **Deploy & Copy URL**:
-    -   Click **Deploy**.
     -   Click **Deploy**.
     -   Copy the worker URL (e.g., `https://hush-backend.yourname.workers.dev`).
 
@@ -115,7 +135,7 @@ Before you start, you need to link the app to your backend:
 
 ## Build & Install
 
-Since this app is not notarized by Apple (requires $99/year developer account), you must build it yourself:
+Since this app is not notarized by Apple, you must build it yourself for local usage:
 
 1.  **Clone the repo**
     ```bash
@@ -147,7 +167,7 @@ To run in development mode with hot reload:
 npm run dev
 ```
 
-*Note: If "Auto-Paste" fails, go to **System Settings > Privacy & Security > Accessibility** and ensure your Terminal is allowed.*
+*Note: If "Auto-Paste" fails, go to **System Settings > Privacy & Security > Accessibility** and ensure Hush is allowed.*
 
 ## Usage (Continuous Mode)
 1.  **Focus**: Click on the text field where you want to type (e.g., Notion, Words, VS Code).

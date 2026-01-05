@@ -280,7 +280,7 @@ export default function App() {
                             mediaRecorderRef.current?.start(100); // 100ms timeslice for periodic ondataavailable
                         }
                     } else {
-                        // User stopped recording
+                        // User stopped recording - DON'T send final segment (it's mostly silence)
                         if (timerRef.current) clearInterval(timerRef.current);
                         if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
                         setDuration(0);
@@ -289,18 +289,8 @@ export default function App() {
                         isSpeakingRef.current = false;
                         maxVolumeRef.current = 0;
 
-                        const MIN_BLOB_SIZE = 50000; // ~2 seconds of audio minimum
-                        const hasMeaningfulAudio = blob.size > MIN_BLOB_SIZE;
-                        console.log(`[Stop] Final segment: size=${blob.size}, sending=${hasMeaningfulAudio}`);
-
-                        transcriptionQueueRef.current = transcriptionQueueRef.current.then(async () => {
-                            if (hasMeaningfulAudio) {
-                                setStatus('processing');
-                                await processAudio(blob, false, sessionMaxVolume);
-                            } else {
-                                setStatus('idle');
-                            }
-                        });
+                        console.log(`[Stop] User stopped. Discarding final segment: ${blob.size} bytes`);
+                        setStatus('idle');
                     }
                 };
 

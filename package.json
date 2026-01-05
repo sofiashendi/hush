@@ -31,13 +31,11 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "clsx": "^2.1.1",
     "electron-squirrel-startup": "^1.0.1",
     "lucide-react": "^0.562.0",
     "motion": "^12.23.26",
     "react": "^19.2.3",
-    "react-dom": "^19.2.3",
-    "tailwind-merge": "^3.4.0"
+    "react-dom": "^19.2.3"
   },
   "devDependencies": {
     "@types/react": "^19.2.7",

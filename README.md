@@ -2,6 +2,12 @@
 
 A sleek, native-feeling macOS application that captures speech, converts it to text using a **Cloudflare Worker (Whisper AI)**, and copies it to your clipboard for instant pasting.
 
+<img width="1394" height="881" alt="Idle State" src="https://github.com/user-attachments/assets/d5104a6c-92b7-4b79-b956-d50b6d22fa57" />
+
+<img width="1410" height="1134" alt="Recording State" src="https://github.com/user-attachments/assets/cb2a4cd0-a1ad-492b-9e6b-49171901a404" />
+
+<img width="1398" height="977" alt="Settings" src="https://github.com/user-attachments/assets/b12cbbec-7ea8-48f8-b4f2-89eef91ca2c0" />
+
 ## Features
 - **Global Shortcut**: Press `Cmd + '` (Single Quote) to toggle the recorder from anywhere.
 - **Native UI**: Draggable, transparent, and non-intrusive design.

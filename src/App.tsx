@@ -214,6 +214,16 @@ export default function App() {
 
                 const now = Date.now();
 
+                // Debug logging every 3 seconds
+                const lastLog = (window as any).__checkVolumeLastLog || 0;
+                if (now - lastLog > 3000) {
+                    (window as any).__checkVolumeLastLog = now;
+                    const chunks = audioChunksRef.current.length;
+                    const speaking = isSpeakingRef.current;
+                    const silenceMs = silenceStartRef.current ? now - silenceStartRef.current : 0;
+                    console.log(`[CheckVolume] RMS=${rms.toFixed(1)}, Speaking=${speaking}, Silence=${silenceMs}ms, Chunks=${chunks}, Flushing=${isFlushing}`);
+                }
+
                 if (rms > 3.0) {
                     lastActivityTimeRef.current = now;
                 }
@@ -265,6 +275,7 @@ export default function App() {
 
                     if (isVadTriggered) {
                         // VAD flush - process and restart recorder
+                        console.log('[VAD] Processing flush, will restart recorder...');
                         isVadTriggered = false;
                         isFlushing = false;
                         lastFlushTimeRef.current = Date.now();
@@ -282,8 +293,12 @@ export default function App() {
 
                         // Restart recorder for next segment (if still recording)
                         if (statusRef.current === 'recording') {
+                            console.log('[VAD] Creating new MediaRecorder...');
                             createMediaRecorder();
-                            mediaRecorderRef.current?.start();
+                            mediaRecorderRef.current?.start(100); // 100ms timeslice for periodic ondataavailable
+                            console.log('[VAD] New MediaRecorder started, state:', mediaRecorderRef.current?.state);
+                        } else {
+                            console.log('[VAD] Not restarting - status is:', statusRef.current);
                         }
                     } else {
                         // User stopped recording
@@ -314,7 +329,7 @@ export default function App() {
             };
 
             createMediaRecorder();
-            mediaRecorderRef.current?.start();
+            mediaRecorderRef.current?.start(100); // 100ms timeslice for periodic ondataavailable
             setStatus('recording');
             statusRef.current = 'recording'; // Manual sync for immediate loop check
             setWordCount(null);

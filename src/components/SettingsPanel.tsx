@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { X, Cloud, Key, Sparkles } from 'lucide-react';
+import { X, Cloud, Key } from 'lucide-react';
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -10,7 +10,6 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [workerUrl, setWorkerUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [autoPaste, setAutoPaste] = useState(false);
-  const [aiPolish, setAiPolish] = useState(false);
 
   useEffect(() => {
     // Load config on mount
@@ -20,7 +19,6 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         setWorkerUrl(config.apiUrl || '');
         setApiKey(config.apiKey || '');
         setAutoPaste(config.autoPaste ?? false);
-        setAiPolish(config.aiPolish ?? false);
       } catch (err) {
         console.error("Failed to load settings:", err);
       }
@@ -33,8 +31,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       await window.electronAPI.saveConfig({
         apiUrl: workerUrl,
         apiKey: apiKey,
-        autoPaste: autoPaste,
-        aiPolish: aiPolish
+        autoPaste: autoPaste
       });
       onClose();
     } catch (err) {
@@ -119,32 +116,6 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-lg"
               animate={{
                 left: autoPaste ? '24px' : '4px'
-              }}
-              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-            />
-          </button>
-        </div>
-
-        {/* AI Polish toggle */}
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-white/90 text-sm">AI Polish</h3>
-              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-            </div>
-            <p className="text-white/40 text-xs mt-0.5">
-              Enhance transcription with Llama AI
-            </p>
-          </div>
-          <button
-            onClick={() => setAiPolish(!aiPolish)}
-            className={`relative w-12 h-7 rounded-full transition-colors ${aiPolish ? 'bg-gradient-to-r from-purple-500 to-pink-500' : 'bg-white/20'
-              }`}
-          >
-            <motion.div
-              className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-lg"
-              animate={{
-                left: aiPolish ? '24px' : '4px'
               }}
               transition={{ type: 'spring', stiffness: 500, damping: 30 }}
             />

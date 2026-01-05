@@ -13,7 +13,6 @@ export default function App() {
     const [duration, setDuration] = useState(0);
     const [wordCount, setWordCount] = useState<number | null>(null);
     const [transcript, setTranscript] = useState('');
-    const [rawTranscript, setRawTranscript] = useState(''); // Raw Whisper output for comparison
 
     // UI State
     const [isMinimized, setIsMinimized] = useState(false);
@@ -23,7 +22,6 @@ export default function App() {
     const [apiUrl, setApiUrl] = useState('');
     const [apiKey, setApiKey] = useState('');
     const [autoPaste, setAutoPaste] = useState(false);
-    const [aiPolish, setAiPolish] = useState(false);
 
     // Refs
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -43,13 +41,11 @@ export default function App() {
     const transcriptionQueueRef = useRef<Promise<void>>(Promise.resolve());
     const statusRef = useRef(status);
     const autoPasteRef = useRef(autoPaste);
-    const aiPolishRef = useRef(aiPolish);
     const lastToggleTimeRef = useRef<number>(0);
 
     // Sync Refs
     useEffect(() => { statusRef.current = status; }, [status]);
     useEffect(() => { autoPasteRef.current = autoPaste; }, [autoPaste]);
-    useEffect(() => { aiPolishRef.current = aiPolish; }, [aiPolish]);
 
     // Load Config
     const loadConfig = async () => {
@@ -58,7 +54,6 @@ export default function App() {
             if (config.apiUrl) setApiUrl(config.apiUrl);
             if (config.apiKey) setApiKey(config.apiKey);
             if (config.autoPaste !== undefined) setAutoPaste(config.autoPaste);
-            if (config.aiPolish !== undefined) setAiPolish(config.aiPolish);
 
             if (!config.apiUrl || !config.apiKey) {
                 setShowSettings(true);
@@ -134,7 +129,6 @@ export default function App() {
     const startRecording = async () => {
         if (statusRef.current !== 'idle') return;
         setTranscript('');
-        setRawTranscript('');
 
         if (!streamRef.current || !audioContextRef.current) {
             await initAudio();
@@ -363,33 +357,22 @@ export default function App() {
             }
 
             const arrayBuffer = await audioBlob.arrayBuffer();
-            const data = await window.electronAPI.transcribeAudio(arrayBuffer, aiPolishRef.current) as { text: string; raw?: string };
+            const data = await window.electronAPI.transcribeAudio(arrayBuffer, false) as { text: string };
             const text = data.text;
-            const rawText = data.raw || text; // Raw Whisper output for comparison
 
             let cleanedText = text;
 
-            // 1. Remove known hallucination phrases (case insensitive)
-            // Only filter CLEAR hallucination patterns, not single common words
-            const phrasesToRemove = [
-                'Subtitles by', 'Thank you for watching', 'Amara.org', 'MBC News', 'Kim Ji-hoon'
-            ];
-            phrasesToRemove.forEach(p => {
-                cleanedText = cleanedText.replace(new RegExp(p, 'gi'), '');
-            });
+            // Minimal cleanup (whisper-large-v3-turbo with vad_filter handles hallucinations well)
+            // 1. Remove CJK characters if accidentally transcribed
+            cleanedText = cleanedText.replace(/[\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\uFF00-\uFFEF\u4E00-\u9FAF]/g, '');
 
-            // 2. Remove non-ASCII (Chinese/Korean/Symbols) if mostly garbage
-            cleanedText = cleanedText.replace(/[\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\uFF00-\uFFEF\u4E00-\u9FAF\u2605-\u2606\u2190-\u2195\u203B]/g, '');
-
-            // 3. Remove repetitive "you you you" patterns
-            cleanedText = cleanedText.replace(/\b(\w+)( \1){2,}\b/gi, '');
+            // 2. Remove repetitive word patterns (e.g., "the the the")
+            cleanedText = cleanedText.replace(/\b(\w+)( \1){2,}\b/gi, '$1');
 
             cleanedText = cleanedText.trim();
 
-            const isShortGarbage = cleanedText.length < 5 && /^[0-9.%$]+$/.test(cleanedText);
-
-            if (cleanedText.length === 0 || isShortGarbage) {
-                console.log('[Process] Filtered empty/garbage:', text);
+            if (cleanedText.length === 0) {
+                console.log('[Process] Filtered empty:', text);
                 if (!isSegment) setStatus('idle');
                 return;
             }
@@ -402,11 +385,6 @@ export default function App() {
                     setTranscript(prev => {
                         const space = prev.length > 0 ? ' ' : '';
                         return prev + space + cleanedText;
-                    });
-                    // Also update raw transcript for comparison
-                    setRawTranscript(prev => {
-                        const space = prev.length > 0 ? ' ' : '';
-                        return prev + space + rawText;
                     });
 
                     const deleteCount = hasPlaceholderRef.current ? 3 : 0;
@@ -524,23 +502,11 @@ export default function App() {
 
                                 <AnimatePresence>
                                     {(status === 'recording' || status === 'processing' || transcript) && (
-                                        <>
-                                            {/* Raw Whisper Panel */}
-                                            {aiPolish && (
-                                                <LiveTranscript
-                                                    transcript={rawTranscript}
-                                                    isRecording={status === 'recording' || status === 'starting'}
-                                                    wordCount={null}
-                                                    label="Raw Whisper"
-                                                />
-                                            )}
-                                            {/* Polished Panel */}
-                                            <LiveTranscript
-                                                transcript={transcript}
-                                                isRecording={status === 'recording' || status === 'starting'}
-                                                wordCount={wordCount}
-                                            />
-                                        </>
+                                        <LiveTranscript
+                                            transcript={transcript}
+                                            isRecording={status === 'recording' || status === 'starting'}
+                                            wordCount={wordCount}
+                                        />
                                     )}
                                 </AnimatePresence>
                             </div>

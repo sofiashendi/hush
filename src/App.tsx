@@ -289,7 +289,7 @@ export default function App() {
                         isSpeakingRef.current = false;
                         maxVolumeRef.current = 0;
 
-                        const MIN_BLOB_SIZE = 5000;
+                        const MIN_BLOB_SIZE = 50000; // ~2 seconds of audio minimum
                         const hasMeaningfulAudio = blob.size > MIN_BLOB_SIZE;
                         console.log(`[Stop] Final segment: size=${blob.size}, sending=${hasMeaningfulAudio}`);
 

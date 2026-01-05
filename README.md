@@ -1,4 +1,4 @@
-# Speech-to-Text OS App
+# Hush
 
 A sleek, native-feeling macOS application that captures speech, converts it to text using a **Cloudflare Worker (Whisper AI)**, and copies it to your clipboard for instant pasting.
 
@@ -113,20 +113,9 @@ Before you start, you need to link the app to your backend:
 
 *Note: Credentials are stored securely using OS-level encryption.*
 
-## Download & Install
+## Build & Install
 
-1.  **Download**: Go to the [Releases](../../releases) page and download the latest `.dmg` file.
-2.  **Install**: Open the `.dmg` and drag the app to your Applications folder.
-3.  **Open (Important)**:
-    -   Because this app is not notarized by Apple, you will see a security warning ("Unidentified Developer").
-    -   **Right-click** (or Control-click) the app in Finder.
-    -   Select **Open**.
-    -   Click **Open** in the dialog box.
-    -   You only need to do this once.
-
-## Development Setup
-
-If you prefer to build from source or contribute:
+Since this app is not notarized by Apple (requires $99/year developer account), you must build it yourself:
 
 1.  **Clone the repo**
     ```bash
@@ -139,22 +128,26 @@ If you prefer to build from source or contribute:
     npm install
     ```
 
-3.  **Run in Development**
+3.  **Build the App**
     ```bash
-    npm run dev
+    npm run dist
     ```
+    The `.dmg` installer will be in the `dist/` folder.
 
-    *Note: If "Auto-Paste" fails, go to **System Settings > Privacy & Security > Accessibility** and ensure your Terminal (if in dev) or "Hush" (if installed) is allowed.*
+4.  **Install & Open**
+    -   Open the `.dmg` and drag the app to Applications.
+    -   **First launch:** Right-click → Open → Click "Open" in the dialog.
+    -   Grant **Microphone** and **Accessibility** permissions when prompted.
 
+## Development
 
-
-## Production Build
-To create a standalone macOS app (`.dmg`):
+To run in development mode with hot reload:
 
 ```bash
-npm run dist
+npm run dev
 ```
-The installer will be in the `dist/` folder.
+
+*Note: If "Auto-Paste" fails, go to **System Settings > Privacy & Security > Accessibility** and ensure your Terminal is allowed.*
 
 ## Usage (Continuous Mode)
 1.  **Focus**: Click on the text field where you want to type (e.g., Notion, Words, VS Code).

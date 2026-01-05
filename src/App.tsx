@@ -169,6 +169,7 @@ export default function App() {
 
                 // Rate limiting: but DON'T discard - just delay the flush
                 if (timeSinceLastFlush < MIN_FLUSH_INTERVAL_MS) {
+                    // Don't log this - happens every frame
                     return; // Audio keeps accumulating, will flush on next check
                 }
 
@@ -177,8 +178,8 @@ export default function App() {
                     return;
                 }
 
-                // Don't flush if it was just silence
-                const isSilence = maxVolumeRef.current < 8.0;
+                // Don't flush if it was just silence (threshold lowered to match speech detection)
+                const isSilence = maxVolumeRef.current < 5.0;
                 if (isSilence && !isSpeakingRef.current) {
                     audioChunksRef.current = [];
                     segmentStartTime = Date.now();
@@ -187,7 +188,6 @@ export default function App() {
                     return;
                 }
 
-                console.log(`[VAD] Flushing segment. MaxRMS: ${maxVolumeRef.current.toFixed(2)}, Duration: ${segmentDuration}ms`);
                 isFlushing = true;
                 isVadTriggered = true;
 
@@ -208,22 +208,12 @@ export default function App() {
 
                 const now = Date.now();
 
-                // Debug logging every 3 seconds
-                const lastLog = (window as any).__checkVolumeLastLog || 0;
-                if (now - lastLog > 3000) {
-                    (window as any).__checkVolumeLastLog = now;
-                    const chunks = audioChunksRef.current.length;
-                    const speaking = isSpeakingRef.current;
-                    const silenceMs = silenceStartRef.current ? now - silenceStartRef.current : 0;
-                    console.log(`[CheckVolume] RMS=${rms.toFixed(1)}, Speaking=${speaking}, Silence=${silenceMs}ms, Chunks=${chunks}, Flushing=${isFlushing}`);
-                }
-
                 if (rms > 3.0) {
                     lastActivityTimeRef.current = now;
                 }
 
-                // Speech detection
-                if (rms > 20.0) {
+                // Speech detection (threshold lowered from 20 to 8 for quieter mics)
+                if (rms > 8.0) {
                     silenceStartRef.current = null;
                     isSpeakingRef.current = true;
                 } else {
@@ -269,7 +259,6 @@ export default function App() {
 
                     if (isVadTriggered) {
                         // VAD flush - process and restart recorder
-                        console.log('[VAD] Processing flush, will restart recorder...');
                         isVadTriggered = false;
                         isFlushing = false;
                         lastFlushTimeRef.current = Date.now();
@@ -287,12 +276,8 @@ export default function App() {
 
                         // Restart recorder for next segment (if still recording)
                         if (statusRef.current === 'recording') {
-                            console.log('[VAD] Creating new MediaRecorder...');
                             createMediaRecorder();
                             mediaRecorderRef.current?.start(100); // 100ms timeslice for periodic ondataavailable
-                            console.log('[VAD] New MediaRecorder started, state:', mediaRecorderRef.current?.state);
-                        } else {
-                            console.log('[VAD] Not restarting - status is:', statusRef.current);
                         }
                     } else {
                         // User stopped recording
@@ -495,7 +480,7 @@ export default function App() {
                                         {status === 'idle' && 'Click to start dictation'}
                                         {status === 'starting' && 'Warming up...'}
                                         {status === 'recording' && 'Listening...'}
-                                        {status === 'processing' && 'Polishing & Pasting...'}
+                                        {status === 'processing' && 'Transcribing...'}
                                         {status === 'error' && 'Error: Check Settings'}
                                     </p>
                                 </motion.div>

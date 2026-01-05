@@ -7,7 +7,8 @@ The application follows a **Client-Serverless** model:
 
 1.  **Renderer (React/Vite)**:
     -   Handles UI state (`idle`, `recording`, `processing`).
-    -   Captures audio via `MediaRecorder` API.
+    -   Captures audio via `MediaRecorder` API with 100ms timeslice.
+    -   Implements Voice Activity Detection (VAD) for continuous dictation.
     -   Communicates with Main Process via `window.electronAPI`.
 2.  **Main Process (Electron)**:
     -   Manages the `BrowserWindow` (transparent, native controls).
@@ -18,10 +19,9 @@ The application follows a **Client-Serverless** model:
     -   **Type**: Cloudflare Worker (Edge Compute).
     -   **Hosted at**: `https://listen.sofia-shendi.workers.dev` (or your deployment).
     -   **Input**: Accepts `POST` requests with `application/octet-stream` (Raw Audio).
-    -   **Authentication**: Authenticates via `Authorization` header against `LISTEN_API_KEY`.
-    -   **AI Models**:
-        -   `@cf/openai/whisper`: Speech-to-Text. (~$0.0005/min)
-        -   `@cf/meta/llama-3-8b-instruct`: Smart Formatting/Polish. (~$0.30/1M tokens)
+    -   **Authentication**: Authenticates via `Authorization` header against `WORKER_API_KEY`.
+    -   **AI Model**: `@cf/openai/whisper-large-v3-turbo` - Fast, accurate speech-to-text (~$0.0005/min).
+    -   **Features**: Uses `vad_filter` and `initial_prompt` for reduced hallucinations.
     -   **Security**: Audio is streamed directly to Cloudflare; no intermediate storage. Keys stored locally.
 
 ## Key Files

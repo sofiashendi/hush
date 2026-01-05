@@ -16,8 +16,7 @@ This application uses **Cloudflare Workers AI**, which has a generous free tier 
 
 *   **Free Pricing:** You get **10,000 Neurons per day** for free on the Workers Free plan. This is typically sufficient for personal daily usage (dictating emails, messages, short docs).
 *   **Overages:** If you exceed the free limit (or use the Paid plan), costs are approximately:
-    *   **Speech-to-Text (Whisper):** ~$0.0005 per minute of audio.
-    *   **AI Polish (Llama 3):** ~$0.30 per 1 million input tokens / ~$0.80 per 1 million output tokens.
+    *   **Speech-to-Text (Whisper-large-v3-turbo):** ~$0.0005 per minute of audio.
     *   *Note: These prices are estimates and subject to Cloudflare's official pricing.*
 
 If you use the app heavily (hours per day), you may need to upgrade to the Cloudflare Workers Paid plan ($5/mo minimum).
@@ -38,7 +37,7 @@ This app requires a Cloudflare Worker to handle audio transcription using the `@
 
 2.  **Add the Code**:
     -   Click **Edit Code**.
-    -   Paste the following into `worker.js` (or `index.js`). This code handles authentication and calls the Whisper AI model.
+    -   Paste the following into `worker.js`. This code handles authentication and calls the Whisper AI model.
 
     ```javascript
     export default {
@@ -47,7 +46,7 @@ This app requires a Cloudflare Worker to handle audio transcription using the `@
         const corsHeaders = {
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Ai-Polish",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
         };
 
         // Handle Preflight
@@ -64,36 +63,25 @@ This app requires a Cloudflare Worker to handle audio transcription using the `@
 
         try {
           const audioBuffer = await request.arrayBuffer();
+          
+          // Convert to Base64 (required for whisper-large-v3-turbo)
+          const uint8Array = new Uint8Array(audioBuffer);
+          let binary = '';
+          for (let i = 0; i < uint8Array.length; i++) {
+            binary += String.fromCharCode(uint8Array[i]);
+          }
+          const base64Audio = btoa(binary);
+
           // Run Whisper Model using Workers AI
-          const response = await env.AI.run("@cf/openai/whisper", {
-            audio: [...new Uint8Array(audioBuffer)],
-            // Reduce hallucinations
-            condition_on_previous_text: false,
-            temperature: 0.0,
-            logprob_threshold: -1.0,
+          const response = await env.AI.run("@cf/openai/whisper-large-v3-turbo", {
+            audio: base64Audio,
+            vad_filter: true,
+            initial_prompt: "Natural conversational dictation.",
           });
 
-          let finalText = response.text || "";
-
-          // 4. AI Polish (Llama 3) - Optional
-          const usePolish = request.headers.get("X-Ai-Polish") === "true";
-          if (usePolish && finalText.length > 5 && env.AI) {
-             const messages = [
-               { role: "system", content: "You are a helpful assistant that polishes transcribed text. Fix grammar, punctuation, and capitalization. Do not add any conversational filler. Output ONLY the polished text." },
-               { role: "user", content: `Polish this text: "${finalText}"` }
-             ];
-             const llamaResponse = await env.AI.run("@cf/meta/llama-3-8b-instruct", { messages });
-             if (llamaResponse.response) {
-               finalText = llamaResponse.response.trim();
-               // Remove quotes if Llama added them
-               if (finalText.startsWith('"') && finalText.endsWith('"')) {
-                 finalText = finalText.slice(1, -1);
-               }
-             }
-          }
-
-          // Return strictly { text: "..." }
-          return new Response(JSON.stringify({ text: finalText }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ text: response.text || "" }), { 
+            headers: { ...corsHeaders, "Content-Type": "application/json" } 
+          });
         } catch (error) {
           return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
         }

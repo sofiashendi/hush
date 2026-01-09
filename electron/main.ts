@@ -1,33 +1,30 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, clipboard, safeStorage, Tray, Menu, nativeImage } from 'electron';
 import path from 'path';
-import { exec } from 'child_process';
+import { spawn, exec } from 'child_process';
 import fs from 'fs';
-import ffmpeg from 'fluent-ffmpeg';
-import ffmpegPath from 'ffmpeg-static';
+import ffmpegPathImport from 'ffmpeg-static';
 import os from 'os';
 import { randomBytes } from 'crypto';
 import { Whisper } from 'smart-whisper';
 import { modelManager, ModelType } from './models';
 
-// Configure ffmpeg path
-if (ffmpegPath) {
-    let validPath = ffmpegPath;
+// Resolve ffmpeg binary path
+// Note: ffmpeg-static path needs special handling in Electron dev/prod environments
+let resolvedFfmpegPath = ffmpegPathImport || 'ffmpeg';
 
+if (ffmpegPathImport) {
     // In production (packaged), ffmpeg is in app.asar.unpacked
     if (app.isPackaged) {
-        validPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked');
+        resolvedFfmpegPath = ffmpegPathImport.replace('app.asar', 'app.asar.unpacked');
     } else {
         // In Development, the bundled path might be wrong.
         // We verify the existence and fall back to known locations.
-        if (!fs.existsSync(validPath)) {
-            console.warn(`[FFMPEG] Default path not found: ${validPath}. Searching alternatives...`);
+        if (!fs.existsSync(resolvedFfmpegPath)) {
+            console.warn(`[FFMPEG] Default path not found: ${resolvedFfmpegPath}. Searching alternatives...`);
 
             const candidates = [
-                // If getAppPath points to root or dist
                 path.join(app.getAppPath(), 'node_modules/ffmpeg-static/ffmpeg'),
-                // If CWD is root (npm run dev usually is)
                 path.join(process.cwd(), 'node_modules/ffmpeg-static/ffmpeg'),
-                // Relative to bundled file location
                 path.join(__dirname, '../node_modules/ffmpeg-static/ffmpeg'),
                 path.join(__dirname, '../../node_modules/ffmpeg-static/ffmpeg')
             ];
@@ -35,20 +32,18 @@ if (ffmpegPath) {
             for (const candidate of candidates) {
                 if (fs.existsSync(candidate)) {
                     console.log(`[FFMPEG] Found executable at: ${candidate}`);
-                    validPath = candidate;
+                    resolvedFfmpegPath = candidate;
                     break;
                 }
             }
         }
     }
 
-    if (fs.existsSync(validPath)) {
-        console.log('[FFMPEG] Final Path set to:', validPath);
-        ffmpeg.setFfmpegPath(validPath);
+    if (fs.existsSync(resolvedFfmpegPath)) {
+        console.log('[FFMPEG] Path resolved to:', resolvedFfmpegPath);
     } else {
-        console.error(`[FFMPEG] CRITICAL: Could not find ffmpeg binary! Searched: ${validPath}`);
-        // Attempt system fallback
-        ffmpeg.setFfmpegPath('ffmpeg');
+        console.error(`[FFMPEG] CRITICAL: Could not find ffmpeg binary! Falling back to system ffmpeg.`);
+        resolvedFfmpegPath = 'ffmpeg'; // System fallback
     }
 }
 
@@ -565,13 +560,24 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
 
         // Convert to 16kHz mono raw float32 PCM using ffmpeg
         await new Promise<void>((resolve, reject) => {
-            ffmpeg(tempInput)
-                .toFormat('f32le')
-                .audioFrequency(16000)
-                .audioChannels(1)
-                .on('end', () => resolve())
-                .on('error', (err) => reject(err))
-                .save(tempPcm);
+            const ffmpegProcess = spawn(resolvedFfmpegPath, [
+                '-i', tempInput,
+                '-f', 'f32le',      // Output format: 32-bit float little-endian
+                '-ar', '16000',     // Sample rate: 16kHz (required by Whisper)
+                '-ac', '1',         // Channels: mono
+                '-y',               // Overwrite output file
+                tempPcm
+            ]);
+
+            ffmpegProcess.on('close', (code) => {
+                if (code === 0) {
+                    resolve();
+                } else {
+                    reject(new Error(`ffmpeg exited with code ${code}`));
+                }
+            });
+
+            ffmpegProcess.on('error', (err) => reject(err));
         });
 
         // Read raw PCM file

@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removePlaceholder: () => ipcRenderer.invoke('remove-placeholder'),
     setTrayTitle: (title: string) => ipcRenderer.invoke('set-tray-title', title),
     hideWindow: () => ipcRenderer.invoke('hide-window'),
-    transcribeAudio: (audioBuffer: ArrayBuffer, aiPolish: boolean) => ipcRenderer.invoke('transcribe-audio', audioBuffer, aiPolish),
+    transcribeAudio: (audioBuffer: ArrayBuffer) => ipcRenderer.invoke('transcribe-audio', audioBuffer),
     getConfig: () => ipcRenderer.invoke('get-config'),
     saveConfig: (config: any) => ipcRenderer.invoke('save-config', config),
     switchModel: (modelType: string) => ipcRenderer.invoke('switch-model', modelType),

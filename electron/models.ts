@@ -72,14 +72,14 @@ export class ModelManager {
           // Handle redirects (301, 302, 303, 307, 308)
           if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
             file.close();
-            fs.unlink(destPath, () => { }); // Clean up partial file
+            fs.unlink(destPath, (err) => { if (err) console.warn('[ModelManager] Cleanup warning:', err.message); });
             console.log(`[ModelManager] Following redirect to: ${response.headers.location}`);
             return resolve(downloadWithRedirects(response.headers.location));
           }
 
           if (response.statusCode !== 200) {
             file.close();
-            fs.unlink(destPath, () => { }); // Cleanup
+            fs.unlink(destPath, (err) => { if (err) console.warn('[ModelManager] Cleanup warning:', err.message); });
             return reject(new Error(`Failed to download: ${response.statusCode}`));
           }
 
@@ -103,12 +103,12 @@ export class ModelManager {
 
           response.on('error', (err) => {
             file.close();
-            fs.unlink(destPath, () => { });
+            fs.unlink(destPath, (err) => { if (err) console.warn('[ModelManager] Cleanup warning:', err.message); });
             reject(err);
           });
         }).on('error', (err) => {
           file.close();
-          fs.unlink(destPath, () => { });
+          fs.unlink(destPath, (err) => { if (err) console.warn('[ModelManager] Cleanup warning:', err.message); });
           reject(err);
         });
       });

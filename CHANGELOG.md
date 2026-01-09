@@ -11,9 +11,8 @@ Hush has moved to a completely **local, offline architecture**.
 - **Improved Latency**: Transcription is now instant on Apple Silicon devices.
 
 ### Added
-- **Bundled Intelligence**: The `base.en` model is now included with the app (~150MB), ensuring instant functionality out of the box.
 - **Model Selection**: You can now choose between `Base` (Fastest, Default), `Small` (Balanced), and `Large Turbo` (Max Accuracy) models.
-    - *Note: Non-bundled models will be downloaded on first selection.*
+    - *Note: Models will be downloaded on first selection.*
 
 ### Removed
 - **Cloudflare Integration**: Removed all dependencies on Cloudflare Workers AI.

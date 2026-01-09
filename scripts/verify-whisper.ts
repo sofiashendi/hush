@@ -12,7 +12,7 @@ if (ffmpegPath) {
 }
 
 const RESOURCES_PATH = path.join(__dirname, '../resources');
-const MODEL_PATH = path.join(RESOURCES_PATH, 'ggml-base.en.bin');
+const MODEL_PATH = path.join(RESOURCES_PATH, 'ggml-base.bin');
 
 async function runTest() {
     console.log("=== HUSH BACKEND VERIFICATION (Float32 w/ Params) ===");

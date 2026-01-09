@@ -513,7 +513,7 @@ ipcMain.handle('switch-model', async (event, modelType: ModelType) => {
     }
 });
 
-ipcMain.handle('transcribe-audio', async (event, audioBuffer, aiPolish) => {
+ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
     console.log(`[Whisper] Transcribing ${audioBuffer.byteLength} bytes...`);
 
     if (!whisperInstance) {
@@ -529,6 +529,16 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer, aiPolish) => {
     const tempInput = path.join(os.tmpdir(), `hush-input-${uniqueId}.webm`);
     const tempPcm = path.join(os.tmpdir(), `hush-output-${uniqueId}.pcm`);
 
+    // Helper to cleanup temp files
+    const cleanupTempFiles = () => {
+        try {
+            if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
+            if (fs.existsSync(tempPcm)) fs.unlinkSync(tempPcm);
+        } catch (e) {
+            console.error("Temp cleanup error:", e);
+        }
+    };
+
     try {
         // Write input buffer to temp file
         // Note: buffer coming from ipc is usually Uint8Array or Buffer
@@ -540,7 +550,6 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer, aiPolish) => {
                 .toFormat('f32le')
                 .audioFrequency(16000)
                 .audioChannels(1)
-                // .audioCodec('pcm_f32le') // implied by format
                 .on('end', () => resolve())
                 .on('error', (err) => reject(err))
                 .save(tempPcm);
@@ -553,7 +562,6 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer, aiPolish) => {
         console.log(`[Whisper] PCM converted. Samples: ${float32Data.length}`);
 
         // Transcribe the PCM data
-        // Removing { language: 'en' } forces auto-detection or multilingual support from library default
         const task = await whisperInstance.transcribe(float32Data, { language: 'auto' });
         const result = await task.result;
 
@@ -566,13 +574,8 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer, aiPolish) => {
 
         console.log(`[Whisper] Result: "${text}"`);
 
-        // Cleanup temp files (async)
-        setTimeout(() => {
-            try {
-                if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
-                if (fs.existsSync(tempPcm)) fs.unlinkSync(tempPcm);
-            } catch (e) { console.error("Temp cleanup error:", e); }
-        }, 100);
+        // Cleanup temp files (async to not block return)
+        setTimeout(cleanupTempFiles, 100);
 
         const HALLUCINATION_PATTERNS = [
             /^\s*\.+\s*$/,
@@ -591,13 +594,7 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer, aiPolish) => {
         return { text };
     } catch (error) {
         console.error('[Whisper] Transcription error:', error);
-
-        // Cleanup on error
-        try {
-            if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
-            if (fs.existsSync(tempPcm)) fs.unlinkSync(tempPcm);
-        } catch (e) { }
-
+        cleanupTempFiles();
         throw error;
     }
 });

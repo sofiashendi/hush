@@ -9,7 +9,7 @@ interface Window {
         removePlaceholder: () => Promise<void>;
         setTrayTitle: (title: string) => Promise<void>;
         hideWindow: () => Promise<void>;
-        transcribeAudio: (audioBuffer: ArrayBuffer, aiPolish: boolean) => Promise<{ text: string }>;
+        transcribeAudio: (audioBuffer: ArrayBuffer) => Promise<{ text: string }>;
         getConfig: () => Promise<any>;
         saveConfig: (config: any) => Promise<boolean>;
         switchModel: (modelType: string) => Promise<boolean>;

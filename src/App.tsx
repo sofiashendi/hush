@@ -383,9 +383,7 @@ export default function App() {
                     <SettingsPanel
                         key="settings"
                         onClose={() => {
-                            console.log('[App] onClose called, setting showSettings to false');
                             setShowSettings(false);
-                            console.log('[App] showSettings should now be false');
                             loadConfig();
                         }}
                     />

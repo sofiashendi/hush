@@ -394,10 +394,29 @@ let whisperInstance: Whisper | null = null;
 const initWhisper = async () => {
     try {
         const config = loadConfig();
-        const modelType = config.model || 'base';
+        const modelType = (config.model || 'base') as ModelType;
         console.log(`[Whisper] Loading model preference: ${modelType}`);
 
-        const modelPath = modelManager.getModelPath(modelType);
+        let modelPath = modelManager.getModelPath(modelType);
+
+        // If preferred model not found, try to download it
+        if (!modelPath) {
+            console.log(`[Whisper] Model ${modelType} not found. Downloading...`);
+            try {
+                modelPath = await modelManager.downloadModel(modelType, (percent) => {
+                    console.log(`[Whisper] Download progress: ${percent}%`);
+                    // Send to renderer if window exists
+                    if (mainWindow) {
+                        mainWindow.webContents.send('download-progress', percent);
+                    }
+                });
+                console.log(`[Whisper] Download complete: ${modelPath}`);
+            } catch (downloadErr) {
+                console.error(`[Whisper] Failed to download model:`, downloadErr);
+                return;
+            }
+        }
+
         if (modelPath) {
             console.log(`[Whisper] Initializing with model: ${modelPath}`);
             // Free previous instance if exists
@@ -407,7 +426,7 @@ const initWhisper = async () => {
             whisperInstance = new Whisper(modelPath, { gpu: true });
             console.log('[Whisper] Ready.');
         } else {
-            console.error('[Whisper] Model not found!');
+            console.error('[Whisper] Model not found and download failed!');
         }
     } catch (err) {
         console.error('[Whisper] Initialization failed:', err);

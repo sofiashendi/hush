@@ -1,0 +1,125 @@
+import path from 'path';
+import fs from 'fs';
+import { app } from 'electron';
+import https from 'https';
+
+export type ModelType = 'base' | 'small' | 'large-v3-turbo';
+
+// Multilingual Models
+const MODELS: Record<ModelType, { filename: string; url: string; size: number }> = {
+  'base': {
+    filename: 'ggml-base.bin',
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
+    size: 147964211 // ~148MB (Multilingual)
+  },
+  'small': {
+    filename: 'ggml-small.bin',
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
+    size: 488267035 // ~488MB (Multilingual)
+  },
+  'large-v3-turbo': {
+    filename: 'ggml-large-v3-turbo-q5_0.bin', // Already multilingual usually
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin',
+    size: 574443520 // ~574MB
+  }
+};
+
+export class ModelManager {
+  private userDataPath: string;
+  private resourcesPath: string;
+
+  constructor() {
+    this.userDataPath = path.join(app.getPath('userData'), 'models');
+    // internal resource path (bundled)
+    this.resourcesPath = app.isPackaged
+      ? process.resourcesPath
+      : path.join(__dirname, '../resources');
+
+    if (!fs.existsSync(this.userDataPath)) {
+      fs.mkdirSync(this.userDataPath, { recursive: true });
+    }
+  }
+
+  getModelPath(type: ModelType): string | null {
+    const config = MODELS[type];
+
+    // 1. Check bundled resources first (only for base usually, but generic here)
+    const bundledPath = path.join(this.resourcesPath, config.filename);
+    if (fs.existsSync(bundledPath)) {
+      console.log(`[ModelManager] Found bundled model: ${bundledPath}`);
+      return bundledPath;
+    }
+
+    // 2. Check userData download cache
+    const cachedPath = path.join(this.userDataPath, config.filename);
+    if (fs.existsSync(cachedPath)) {
+      console.log(`[ModelManager] Found cached model: ${cachedPath}`);
+      return cachedPath;
+    }
+
+    return null;
+  }
+
+  async downloadModel(type: ModelType, onProgress?: (percent: number) => void): Promise<string> {
+    const config = MODELS[type];
+    const destPath = path.join(this.userDataPath, config.filename);
+
+    const downloadWithRedirects = (url: string): Promise<string> => {
+      return new Promise((resolve, reject) => {
+        const file = fs.createWriteStream(destPath);
+
+        https.get(url, (response) => {
+          // Handle redirects (301, 302, 303, 307, 308)
+          if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+            file.close();
+            fs.unlink(destPath, () => { }); // Clean up partial file
+            console.log(`[ModelManager] Following redirect to: ${response.headers.location}`);
+            return resolve(downloadWithRedirects(response.headers.location));
+          }
+
+          if (response.statusCode !== 200) {
+            file.close();
+            fs.unlink(destPath, () => { }); // Cleanup
+            return reject(new Error(`Failed to download: ${response.statusCode}`));
+          }
+
+          const len = parseInt(response.headers['content-length'] || '0', 10);
+          let cur = 0;
+          const total = len > 0 ? len : config.size;
+
+          response.on('data', (chunk) => {
+            file.write(chunk);
+            cur += chunk.length;
+            if (onProgress) {
+              onProgress(Math.round((cur / total) * 100));
+            }
+          });
+
+          response.on('end', () => {
+            file.end();
+            console.log(`[ModelManager] Download complete: ${destPath}`);
+            resolve(destPath);
+          });
+
+          response.on('error', (err) => {
+            file.close();
+            fs.unlink(destPath, () => { });
+            reject(err);
+          });
+        }).on('error', (err) => {
+          file.close();
+          fs.unlink(destPath, () => { });
+          reject(err);
+        });
+      });
+    };
+
+    return downloadWithRedirects(config.url);
+  }
+
+  isModelAvailable(type: ModelType): boolean {
+    return this.getModelPath(type) !== null;
+  }
+}
+
+export const modelManager = new ModelManager();

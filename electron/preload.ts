@@ -19,5 +19,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     transcribeAudio: (audioBuffer: ArrayBuffer, aiPolish: boolean) => ipcRenderer.invoke('transcribe-audio', audioBuffer, aiPolish),
     getConfig: () => ipcRenderer.invoke('get-config'),
     saveConfig: (config: any) => ipcRenderer.invoke('save-config', config),
+    switchModel: (modelType: string) => ipcRenderer.invoke('switch-model', modelType),
+    onDownloadProgress: (callback: (percent: number) => void) => {
+        const cb = (_: any, percent: number) => callback(percent);
+        ipcRenderer.on('download-progress', cb);
+        return () => ipcRenderer.removeListener('download-progress', cb);
+    },
     log: (message: string) => ipcRenderer.send('renderer-log', message),
 });

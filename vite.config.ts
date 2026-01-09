@@ -17,7 +17,7 @@ export default defineConfig({
                     build: {
                         outDir: 'dist-electron',
                         rollupOptions: {
-                            external: ['electron-squirrel-startup'],
+                            external: ['electron-squirrel-startup', 'smart-whisper'],
                         },
                     },
                 },

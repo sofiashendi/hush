@@ -12,6 +12,8 @@ interface Window {
         transcribeAudio: (audioBuffer: ArrayBuffer, aiPolish: boolean) => Promise<{ text: string }>;
         getConfig: () => Promise<any>;
         saveConfig: (config: any) => Promise<boolean>;
+        switchModel: (modelType: string) => Promise<boolean>;
+        onDownloadProgress: (callback: (percent: number) => void) => () => void;
         log: (message: string) => void;
     }
 }

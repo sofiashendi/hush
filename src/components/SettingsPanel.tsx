@@ -1,23 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { X, Cloud, Key } from 'lucide-react';
+import { X, Cpu, Download } from 'lucide-react';
 
 interface SettingsPanelProps {
   onClose: () => void;
 }
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
-  const [workerUrl, setWorkerUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
+  const [model, setModel] = useState('base');
   const [autoPaste, setAutoPaste] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     // Load config on mount
     const load = async () => {
       try {
         const config = await window.electronAPI.getConfig();
-        setWorkerUrl(config.apiUrl || '');
-        setApiKey(config.apiKey || '');
+        setModel(config.model || 'base');
         setAutoPaste(config.autoPaste ?? false);
       } catch (err) {
         console.error("Failed to load settings:", err);
@@ -27,16 +26,51 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   }, []);
 
   const handleSave = async () => {
+    console.log('[Settings] Save clicked');
     try {
+      console.log('[Settings] Saving config...');
       await window.electronAPI.saveConfig({
-        apiUrl: workerUrl,
-        apiKey: apiKey,
+        model: model,
         autoPaste: autoPaste
       });
-      onClose();
+      console.log('[Settings] Config saved');
     } catch (err) {
-      console.error("Failed to save settings:", err);
-      alert("Failed to save settings.");
+      console.error("[Settings] Failed to save settings:", err);
+    }
+    // Always close after save attempt
+    console.log('[Settings] Calling onClose');
+    onClose();
+  };
+
+  const [downloadProgress, setDownloadProgress] = useState(0);
+
+  useEffect(() => {
+    // Listen for download progress
+    const cleanup = window.electronAPI.onDownloadProgress((percent: number) => {
+      setDownloadProgress(percent);
+      if (percent < 100) {
+        setIsDownloading(true);
+      } else {
+        setIsDownloading(false);
+      }
+    });
+    return cleanup;
+  }, []);
+
+  const handleModelChange = async (newModel: string) => {
+    if (newModel === model) return;
+    setIsDownloading(true);
+    setDownloadProgress(-1); // -1 means "switching, not downloading"
+    try {
+      // Trigger model switch (might download)
+      await window.electronAPI.switchModel(newModel);
+      setModel(newModel);
+    } catch (err) {
+      console.error("Failed to switch model:", err);
+      alert("Failed to switch model. The model may still be loading or there was an error.");
+    } finally {
+      setIsDownloading(false);
+      setDownloadProgress(0);
     }
   };
 
@@ -48,9 +82,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       className="relative w-full max-w-2xl bg-[#1c1c1e] rounded-3xl border border-white/10 shadow-2xl overflow-hidden pointer-events-auto"
       style={{
         backgroundColor: '#1c1c1e',
-        opacity: 1,
         backdropFilter: 'none',
-        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' // Softer shadow for grey bg
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
       }}
     >
       {/* Header */}
@@ -65,58 +98,110 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       </div>
 
       {/* Content */}
-      <div className="px-6 py-6 space-y-6">
-        {/* Cloudflare Worker URL */}
-        <div className="space-y-2">
-          <label className="flex items-center gap-2 text-white/70 text-sm">
-            <Cloud className="w-4 h-4 text-blue-400" />
-            Cloudflare Worker URL
-          </label>
-          <input
-            type="text"
-            value={workerUrl}
-            onChange={(e) => setWorkerUrl(e.target.value)}
-            placeholder="https://your-worker.workers.dev"
-            className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 text-white/90 placeholder-white/30 focus:outline-none focus:border-blue-400/50 transition-colors backdrop-blur-xl"
-          />
-        </div>
+      <div style={{ padding: '32px', backgroundColor: 'rgba(255,255,255,0.03)' }}>
 
-        {/* Cloudflare Worker API Key */}
-        <div className="space-y-2">
-          <label className="flex items-center gap-2 text-white/70 text-sm">
-            <Key className="w-4 h-4 text-green-400" />
-            Cloudflare Worker API Key
-          </label>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="Enter your API key"
-            className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 text-white/90 placeholder-white/30 focus:outline-none focus:border-green-400/50 transition-colors backdrop-blur-xl"
-          />
+        {/* Model Selection */}
+        <div style={{ marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+            <label style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 500, fontSize: '16px' }}>
+              Transcription Model
+            </label>
+            {isDownloading && (
+              <span style={{ fontSize: '12px', color: '#60a5fa', fontWeight: 500 }}>
+                {downloadProgress < 0 ? 'Switching...' : downloadProgress < 100 ? `Downloading ${downloadProgress}%` : 'Finalizing...'}
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+            {['base', 'small', 'large-v3-turbo'].map((m) => {
+              const isSelected = model === m;
+              const labels: Record<string, string> = { 'base': 'Base', 'small': 'Small', 'large-v3-turbo': 'Large' };
+              const sublabels: Record<string, string> = { 'base': 'Fast & Lightweight', 'small': 'Balanced', 'large-v3-turbo': 'Max Accuracy' };
+              const details: Record<string, string> = { 'base': '~150MB', 'small': '~500MB', 'large-v3-turbo': '~1.5GB' };
+
+              return (
+                <button
+                  key={m}
+                  onClick={() => handleModelChange(m)}
+                  disabled={isDownloading}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    padding: '16px',
+                    borderRadius: '12px',
+                    border: isSelected ? '2px solid #3b82f6' : '2px solid rgba(255,255,255,0.1)',
+                    backgroundColor: isSelected ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.05)',
+                    cursor: isDownloading ? 'not-allowed' : 'pointer',
+                    opacity: isDownloading ? 0.5 : 1,
+                    textAlign: 'left',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <span style={{ fontWeight: 600, fontSize: '15px', color: isSelected ? '#fff' : 'rgba(255,255,255,0.8)' }}>
+                      {labels[m]}
+                    </span>
+                    <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>{details[m]}</span>
+                  </div>
+                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{sublabels[m]}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Progress Bar */}
+          {isDownloading && (
+            <div style={{ position: 'relative', width: '100%', height: '6px', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: '3px', overflow: 'hidden', marginTop: '16px' }}>
+              <motion.div
+                style={{ position: 'absolute', height: '100%', background: 'linear-gradient(to right, #3b82f6, #60a5fa)' }}
+                initial={{ width: 0 }}
+                animate={{ width: `${downloadProgress}%` }}
+                transition={{ ease: "easeOut" }}
+              />
+            </div>
+          )}
         </div>
 
         {/* Divider */}
-        <div className="border-t border-white/10" />
+        <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.1)', marginBottom: '24px' }} />
 
         {/* Auto-paste toggle */}
-        <div className="flex items-center justify-between">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <h3 className="text-white/90 text-sm">Auto-paste Text</h3>
-            <p className="text-white/40 text-xs mt-0.5">
-              Automatically paste transcribed text into active window
+            <h3 style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 500, fontSize: '16px', marginBottom: '4px' }}>
+              Auto-Paste Text
+            </h3>
+            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px', maxWidth: '320px' }}>
+              Automatically pastes the text into your active window after transcription.
             </p>
           </div>
           <button
             onClick={() => setAutoPaste(!autoPaste)}
-            className={`relative w-12 h-7 rounded-full transition-colors ${autoPaste ? 'bg-blue-500' : 'bg-white/20'
-              }`}
+            style={{
+              position: 'relative',
+              width: '52px',
+              height: '32px',
+              borderRadius: '16px',
+              backgroundColor: autoPaste ? '#3b82f6' : 'rgba(255,255,255,0.1)',
+              border: 'none',
+              cursor: 'pointer',
+              transition: 'background-color 0.2s ease',
+              flexShrink: 0,
+            }}
           >
             <motion.div
-              className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-lg"
-              animate={{
-                left: autoPaste ? '24px' : '4px'
+              style={{
+                position: 'absolute',
+                top: '4px',
+                left: '4px',
+                width: '24px',
+                height: '24px',
+                borderRadius: '12px',
+                backgroundColor: '#fff',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
               }}
+              animate={{ x: autoPaste ? 20 : 0 }}
               transition={{ type: 'spring', stiffness: 500, damping: 30 }}
             />
           </button>
@@ -124,16 +209,39 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       </div>
 
       {/* Footer */}
-      <div className="px-6 py-4 border-t border-white/10 bg-white/5 flex justify-end gap-3">
+      <div style={{
+        padding: '16px 24px',
+        borderTop: '1px solid rgba(255,255,255,0.1)',
+        backgroundColor: 'rgba(255,255,255,0.03)',
+        display: 'flex',
+        justifyContent: 'flex-end',
+        gap: '12px'
+      }}>
         <button
-          onClick={onClose}
-          className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-white/70 text-sm border border-white/10"
+          onClick={() => { console.log('[Settings] Cancel clicked'); onClose(); }}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '8px',
+            backgroundColor: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            color: 'rgba(255,255,255,0.7)',
+            fontSize: '14px',
+            cursor: 'pointer',
+          }}
         >
           Cancel
         </button>
         <button
           onClick={handleSave}
-          className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-green-500 hover:from-blue-600 hover:to-green-600 transition-colors text-white text-sm"
+          style={{
+            padding: '8px 16px',
+            borderRadius: '8px',
+            background: 'linear-gradient(to right, #3b82f6, #22c55e)',
+            border: 'none',
+            color: '#fff',
+            fontSize: '14px',
+            cursor: 'pointer',
+          }}
         >
           Save Changes
         </button>

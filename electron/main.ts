@@ -1,7 +1,55 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, clipboard, safeStorage, Tray, Menu, net, nativeImage } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, clipboard, safeStorage, Tray, Menu, nativeImage } from 'electron';
 import path from 'path';
 import { exec } from 'child_process';
 import fs from 'fs';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegPath from 'ffmpeg-static';
+import os from 'os';
+import { Whisper } from 'smart-whisper';
+import { modelManager, ModelType } from './models';
+
+// Configure ffmpeg path
+if (ffmpegPath) {
+    let validPath = ffmpegPath;
+
+    // In production (packaged), ffmpeg is in app.asar.unpacked
+    if (app.isPackaged) {
+        validPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked');
+    } else {
+        // In Development, the bundled path might be wrong.
+        // We verify the existence and fall back to known locations.
+        if (!fs.existsSync(validPath)) {
+            console.warn(`[FFMPEG] Default path not found: ${validPath}. Searching alternatives...`);
+
+            const candidates = [
+                // If getAppPath points to root or dist
+                path.join(app.getAppPath(), 'node_modules/ffmpeg-static/ffmpeg'),
+                // If CWD is root (npm run dev usually is)
+                path.join(process.cwd(), 'node_modules/ffmpeg-static/ffmpeg'),
+                // Relative to bundled file location
+                path.join(__dirname, '../node_modules/ffmpeg-static/ffmpeg'),
+                path.join(__dirname, '../../node_modules/ffmpeg-static/ffmpeg')
+            ];
+
+            for (const candidate of candidates) {
+                if (fs.existsSync(candidate)) {
+                    console.log(`[FFMPEG] Found executable at: ${candidate}`);
+                    validPath = candidate;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (fs.existsSync(validPath)) {
+        console.log('[FFMPEG] Final Path set to:', validPath);
+        ffmpeg.setFfmpegPath(validPath);
+    } else {
+        console.error(`[FFMPEG] CRITICAL: Could not find ffmpeg binary! Searched: ${validPath}`);
+        // Attempt system fallback
+        ffmpeg.setFfmpegPath('ffmpeg');
+    }
+}
 
 // Load environment variables from .env
 // (Removed: Config is loaded from config.json)
@@ -182,8 +230,6 @@ app.on('will-quit', () => {
 
 
 // IPC Handler to paste text
-
-// IPC Handler to paste text
 ipcMain.on('renderer-log', (event, message) => {
     console.log('[RENDERER]', message);
 });
@@ -205,7 +251,7 @@ ipcMain.handle('remove-placeholder', async () => {
     // key code 51 is DELETE (Backspace)
     const script = `tell application "System Events"
         repeat 3 times
-            key code 51
+        key code 51
         end repeat
     end tell`;
 
@@ -242,22 +288,8 @@ ipcMain.handle('paste-text', async (event, text, autoPaste = false, deleteCount 
                 console.log(`[Smart Paste] Focused Role: ${role}`);
 
                 const editableRoles = ['AXTextField', 'AXTextArea', 'AXWebArea', 'AXRichTextView', 'AXgroup'];
-                // We also allow 'Unknown' generally? No, user wanted safety.
-                // But Electron apps often return Unknown. 
-                // Let's Add 'Unknown' to editableRoles for now to prevent blocking Antigravity if it reports Unknown.
-                // Re-evaluating: 'Antigravity' (this chat) is likely a Browser or Electron.
-                // If it's Chrome/Arc/Safari, it should be AXWebArea.
-                // If it's a wrapper, might be AXGroup.
-                // Let's add 'Unknown' to the list but log it.
-                // Actually, let's keep it strict but add 'AXStandardWindow' just in case? No.
-
-                // Let's ADD 'Unknown' to the allow list BUT verify it carefully.
-                // The user said "Moved focus to text input... did not paste".
-                // If I allow Unknown, it works.
-                // Risk: Pasting into Desktop.
-                // Mitigated by: User context.
-
-                const extendedRoles = [...editableRoles, 'Unknown']; // Temporarily permissive to fix "Not Pasting" annoyance.
+                // Not Pasting fix for unknowns:
+                const extendedRoles = [...editableRoles, 'Unknown'];
 
                 if (extendedRoles.includes(role)) {
                     console.log(`[Smart Paste] Pasting into ${role}...`);
@@ -284,8 +316,6 @@ ipcMain.handle('paste-text', async (event, text, autoPaste = false, deleteCount 
 ipcMain.handle('hide-window', () => {
     if (mainWindow) mainWindow.hide();
 });
-
-// Config Storage Logic
 
 // Config Storage Logic
 const getConfigPath = () => {
@@ -349,8 +379,6 @@ const saveConfig = (newConfig: any) => {
     }
 };
 
-// ... (Existing window creation code) ...
-
 // IPC Handlers for Settings
 ipcMain.handle('get-config', () => {
     return loadConfig();
@@ -360,48 +388,195 @@ ipcMain.handle('save-config', (event, newConfig) => {
     return saveConfig(newConfig);
 });
 
-ipcMain.handle('transcribe-audio', async (event, audioBuffer, aiPolish) => {
-    const config = loadConfig();
-    const workerUrl = config.apiUrl;
-    const apiKey = config.apiKey;
+let whisperInstance: Whisper | null = null;
 
-    if (!apiKey) throw new Error('API Key is missing in Settings');
-    if (!workerUrl) throw new Error('API URL is missing in Settings');
+// Initialize with Base model by default
+const initWhisper = async () => {
+    try {
+        const config = loadConfig();
+        const modelType = config.model || 'base';
+        console.log(`[Whisper] Loading model preference: ${modelType}`);
 
-    return new Promise((resolve, reject) => {
-        const req = net.request({
-            method: 'POST',
-            url: workerUrl,
-            headers: {
-                'Authorization': apiKey,
-                'Content-Type': 'application/octet-stream',
-                'X-Ai-Polish': aiPolish ? 'true' : 'false'
+        const modelPath = modelManager.getModelPath(modelType);
+        if (modelPath) {
+            console.log(`[Whisper] Initializing with model: ${modelPath}`);
+            // Free previous instance if exists
+            if (whisperInstance) {
+                await whisperInstance.free();
+            }
+            whisperInstance = new Whisper(modelPath, { gpu: true });
+            console.log('[Whisper] Ready.');
+        } else {
+            console.error('[Whisper] Model not found!');
+        }
+    } catch (err) {
+        console.error('[Whisper] Initialization failed:', err);
+    }
+};
+
+// Initial init
+const cleanupTempFiles = () => {
+    try {
+        const tmpDir = os.tmpdir();
+        const files = fs.readdirSync(tmpDir);
+        let count = 0;
+        files.forEach(file => {
+            if (file.startsWith('hush-input-') || file.startsWith('hush-output-')) {
+                const filePath = path.join(tmpDir, file);
+                // Optional: Check age to avoid deleting currently active files if duplicate instances?
+                // But generally safe on startup.
+                try {
+                    fs.unlinkSync(filePath);
+                    count++;
+                } catch (e) {
+                    // ignore locked files
+                }
             }
         });
+        if (count > 0) console.log(`[Cleanup] Removed ${count} temporary files.`);
+    } catch (err) {
+        console.error('[Cleanup] Failed to clean temp files:', err);
+    }
+};
 
-        req.on('response', (response) => {
-            let data = '';
-            response.on('data', (chunk) => {
-                data += chunk.toString();
+app.whenReady().then(() => {
+    cleanupTempFiles();
+    initWhisper();
+});
+
+ipcMain.handle('switch-model', async (event, modelType: ModelType) => {
+    // 1. Check if model exists
+    let modelPath = modelManager.getModelPath(modelType);
+
+    if (!modelPath) {
+        console.log(`[Whisper] Model ${modelType} not found. Downloading...`);
+        // Notify renderer that download started (0%)
+        event.sender.send('download-progress', 0);
+
+        try {
+            modelPath = await modelManager.downloadModel(modelType, (percent) => {
+                event.sender.send('download-progress', percent);
             });
-            response.on('end', () => {
-                if (response.statusCode === 200) {
-                    try {
-                        resolve(JSON.parse(data));
-                    } catch (e) {
-                        reject('Invalid JSON response');
-                    }
-                } else {
-                    reject(`Server Error: ${response.statusCode} - ${data}`);
-                }
-            });
+            console.log(`[Whisper] Download complete: ${modelPath}`);
+            event.sender.send('download-progress', 100); // Ensure 100% is sent
+        } catch (error) {
+            console.error(`[Whisper] Download failed:`, error);
+            throw error;
+        }
+    }
+
+    console.log(`[Whisper] Switching to ${modelType}...`);
+
+    // Create new instance
+    try {
+        // Free old instance
+        if (whisperInstance) {
+            await whisperInstance.free();
+            whisperInstance = null; // Safety clear
+        }
+
+        // Small delay to ensure memory is freed? Not usually needed but good practice.
+        // await new Promise(r => setTimeout(r, 100));
+
+        whisperInstance = new Whisper(modelPath, { gpu: true });
+        console.log(`[Whisper] Switched to ${modelType}`);
+
+        // Persist choice to config
+        const config = loadConfig();
+        config.model = modelType;
+        saveConfig(config);
+
+        return true;
+    } catch (error) {
+        console.error(`[Whisper] Failed to switch model:`, error);
+        throw error;
+    }
+});
+
+ipcMain.handle('transcribe-audio', async (event, audioBuffer, aiPolish) => {
+    console.log(`[Whisper] Transcribing ${audioBuffer.byteLength} bytes...`);
+
+    if (!whisperInstance) {
+        console.warn('[Whisper] Instance not ready, attempting re-init...');
+        await initWhisper();
+        if (!whisperInstance) {
+            throw new Error("Whisper not initialized");
+        }
+    }
+
+    // Create temp files for conversion
+    const tempInput = path.join(os.tmpdir(), `hush-input-${Date.now()}.webm`);
+    const tempPcm = path.join(os.tmpdir(), `hush-output-${Date.now()}.pcm`);
+
+    try {
+        // Write input buffer to temp file
+        // Note: buffer coming from ipc is usually Uint8Array or Buffer
+        fs.writeFileSync(tempInput, Buffer.from(audioBuffer));
+
+        // Convert to 16kHz mono raw float32 PCM using ffmpeg
+        await new Promise<void>((resolve, reject) => {
+            ffmpeg(tempInput)
+                .toFormat('f32le')
+                .audioFrequency(16000)
+                .audioChannels(1)
+                // .audioCodec('pcm_f32le') // implied by format
+                .on('end', () => resolve())
+                .on('error', (err) => reject(err))
+                .save(tempPcm);
         });
 
-        req.on('error', (err) => {
-            reject(err.message);
-        });
+        // Read raw PCM file
+        const pcmBuffer = fs.readFileSync(tempPcm);
+        const float32Data = new Float32Array(pcmBuffer.buffer, pcmBuffer.byteOffset, pcmBuffer.length / 4);
 
-        req.write(Buffer.from(audioBuffer)); // Send raw buffer
-        req.end();
-    });
+        console.log(`[Whisper] PCM converted. Samples: ${float32Data.length}`);
+
+        // Transcribe the PCM data
+        // Removing { language: 'en' } forces auto-detection or multilingual support from library default
+        const task = await whisperInstance.transcribe(float32Data, { language: 'auto' });
+        const result = await task.result;
+
+        let text = "";
+        if (Array.isArray(result)) {
+            text = result.map((r: any) => r.text).join(" ").trim();
+        } else {
+            text = (result as any).text?.trim() || "";
+        }
+
+        console.log(`[Whisper] Result: "${text}"`);
+
+        // Cleanup temp files (async)
+        setTimeout(() => {
+            try {
+                if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
+                if (fs.existsSync(tempPcm)) fs.unlinkSync(tempPcm);
+            } catch (e) { console.error("Temp cleanup error:", e); }
+        }, 100);
+
+        const HALLUCINATION_PATTERNS = [
+            /^\s*\.+\s*$/,
+            /^[\u3000-\u9FAF\uFF00-\uFFEF\s]+$/,
+            /\[.*\]/,
+            /^\s*Connect specific.*\s*$/,
+            /I'm a programmer/,
+            /Thank you./
+        ];
+
+        if (HALLUCINATION_PATTERNS.some(p => p.test(text))) {
+            console.log('[Whisper] Filtered hallucination');
+            return { text: "" };
+        }
+
+        return { text };
+    } catch (error) {
+        console.error('[Whisper] Transcription error:', error);
+
+        // Cleanup on error
+        try {
+            if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
+            if (fs.existsSync(tempPcm)) fs.unlinkSync(tempPcm);
+        } catch (e) { }
+
+        throw error;
+    }
 });

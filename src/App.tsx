@@ -54,10 +54,7 @@ export default function App() {
             if (config.apiUrl) setApiUrl(config.apiUrl);
             if (config.apiKey) setApiKey(config.apiKey);
             if (config.autoPaste !== undefined) setAutoPaste(config.autoPaste);
-
-            if (!config.apiUrl || !config.apiKey) {
-                setShowSettings(true);
-            }
+            // Note: No longer auto-opening settings - local Whisper doesn't need API keys
         } catch (e) {
             console.error("Config load error", e);
         }
@@ -386,7 +383,9 @@ export default function App() {
                     <SettingsPanel
                         key="settings"
                         onClose={() => {
+                            console.log('[App] onClose called, setting showSettings to false');
                             setShowSettings(false);
+                            console.log('[App] showSettings should now be false');
                             loadConfig();
                         }}
                     />

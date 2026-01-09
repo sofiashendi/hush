@@ -30,6 +30,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('model-ready', cb);
         return () => ipcRenderer.removeListener('model-ready', cb);
     },
+    onModelError: (callback: (message: string) => void) => {
+        const cb = (_: any, message: string) => callback(message);
+        ipcRenderer.on('model-error', cb);
+        return () => ipcRenderer.removeListener('model-error', cb);
+    },
     isModelReady: () => ipcRenderer.invoke('is-model-ready'),
     log: (message: string) => ipcRenderer.send('renderer-log', message),
 });

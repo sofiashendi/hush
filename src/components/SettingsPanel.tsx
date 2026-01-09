@@ -214,7 +214,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         gap: '12px'
       }}>
         <button
-          onClick={() => { console.log('[Settings] Cancel clicked'); onClose(); }}
+          onClick={onClose}
           style={{
             padding: '8px 16px',
             borderRadius: '8px',

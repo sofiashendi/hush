@@ -11,8 +11,9 @@ if (ffmpegPath) {
     ffmpeg.setFfmpegPath(ffmpegPath);
 }
 
-const RESOURCES_PATH = path.join(__dirname, '../resources');
-const MODEL_PATH = path.join(RESOURCES_PATH, 'ggml-base.bin');
+// Models are now downloaded to user data directory, not bundled in resources
+const USER_DATA_PATH = path.join(os.homedir(), 'Library/Application Support/hush/models');
+const MODEL_PATH = path.join(USER_DATA_PATH, 'ggml-base-q5_1.bin');
 
 async function runTest() {
     console.log("=== HUSH BACKEND VERIFICATION (Float32 w/ Params) ===");

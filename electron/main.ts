@@ -414,6 +414,9 @@ const initWhisper = async () => {
                 console.log(`[Whisper] Download complete: ${modelPath}`);
             } catch (downloadErr) {
                 console.error(`[Whisper] Failed to download model:`, downloadErr);
+                if (mainWindow) {
+                    mainWindow.webContents.send('model-error', 'Failed to download AI model. Check your internet connection and try again.');
+                }
                 return;
             }
         }
@@ -433,9 +436,15 @@ const initWhisper = async () => {
             }
         } else {
             console.error('[Whisper] Model not found and download failed!');
+            if (mainWindow) {
+                mainWindow.webContents.send('model-error', 'Model not found. Please restart the app.');
+            }
         }
     } catch (err) {
         console.error('[Whisper] Initialization failed:', err);
+        if (mainWindow) {
+            mainWindow.webContents.send('model-error', 'Failed to initialize transcription engine.');
+        }
     }
 };
 
@@ -540,7 +549,7 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
     const tempPcm = path.join(os.tmpdir(), `hush-output-${uniqueId}.pcm`);
 
     // Helper to cleanup temp files
-    const cleanupTempFiles = () => {
+    const cleanupTranscriptionFiles = () => {
         try {
             if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
             if (fs.existsSync(tempPcm)) fs.unlinkSync(tempPcm);
@@ -585,7 +594,7 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
         console.log(`[Whisper] Result: "${text}"`);
 
         // Cleanup temp files (async to not block return)
-        setTimeout(cleanupTempFiles, 100);
+        setTimeout(cleanupTranscriptionFiles, 100);
 
         const HALLUCINATION_PATTERNS = [
             /^\s*\.+\s*$/,
@@ -604,7 +613,7 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
         return { text };
     } catch (error) {
         console.error('[Whisper] Transcription error:', error);
-        cleanupTempFiles();
+        cleanupTranscriptionFiles();
         throw error;
     }
 });

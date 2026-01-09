@@ -19,6 +19,7 @@ export default function App() {
     const [showSettings, setShowSettings] = useState(false);
     const [isModelReady, setIsModelReady] = useState(false);
     const [modelDownloadProgress, setModelDownloadProgress] = useState(-1); // -1 = not downloading
+    const [modelError, setModelError] = useState<string | null>(null);
 
     // Config State
     const [apiUrl, setApiUrl] = useState('');
@@ -79,6 +80,14 @@ export default function App() {
             console.log('[App] Model ready!');
             setIsModelReady(true);
             setModelDownloadProgress(-1);
+            setModelError(null);
+        });
+
+        // Listen for model error event
+        const removeModelErrorListener = window.electronAPI.onModelError((message) => {
+            console.error('[App] Model error:', message);
+            setModelError(message);
+            setModelDownloadProgress(-1);
         });
 
         // Listen for download progress (initial model download)
@@ -104,6 +113,7 @@ export default function App() {
 
             removeToggleListener();
             removeModelReadyListener();
+            removeModelErrorListener();
             removeDownloadListener();
             if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
             if (audioContextRef.current) audioContextRef.current.close();
@@ -442,15 +452,32 @@ export default function App() {
                                 {/* Title */}
                                 <div>
                                     <h1 className="text-white/90 text-xl font-medium mb-1">Hush</h1>
-                                    <p className="text-white/50 text-sm">
-                                        {modelDownloadProgress >= 0
-                                            ? 'Downloading AI model...'
-                                            : 'Initializing transcription engine...'}
+                                    <p className={`text-sm ${modelError ? 'text-red-400' : 'text-white/50'}`}>
+                                        {modelError
+                                            ? modelError
+                                            : modelDownloadProgress >= 0
+                                                ? 'Downloading AI model...'
+                                                : 'Initializing transcription engine...'}
                                     </p>
                                 </div>
 
+                                {/* Error state */}
+                                {modelError && (
+                                    <div className="space-y-3">
+                                        <div className="w-12 h-12 mx-auto rounded-full bg-red-500/20 flex items-center justify-center">
+                                            <X className="w-6 h-6 text-red-400" />
+                                        </div>
+                                        <button
+                                            onClick={() => window.location.reload()}
+                                            className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-white/80 text-sm"
+                                        >
+                                            Try Again
+                                        </button>
+                                    </div>
+                                )}
+
                                 {/* Progress bar (only when downloading) */}
-                                {modelDownloadProgress >= 0 && (
+                                {!modelError && modelDownloadProgress >= 0 && (
                                     <div className="space-y-2">
                                         <div className="h-2 bg-white/10 rounded-full overflow-hidden">
                                             <motion.div
@@ -467,8 +494,8 @@ export default function App() {
                                     </div>
                                 )}
 
-                                {/* Loading spinner (when not downloading) */}
-                                {modelDownloadProgress < 0 && (
+                                {/* Loading spinner (when not downloading and no error) */}
+                                {!modelError && modelDownloadProgress < 0 && (
                                     <motion.div
                                         className="w-8 h-8 mx-auto border-2 border-white/20 border-t-blue-500 rounded-full"
                                         animate={{ rotate: 360 }}
@@ -477,11 +504,13 @@ export default function App() {
                                 )}
 
                                 {/* Tip */}
-                                <p className="text-white/30 text-xs">
-                                    {modelDownloadProgress >= 0
-                                        ? 'First-time setup only. This won\'t happen again.'
-                                        : 'This usually takes a few seconds.'}
-                                </p>
+                                {!modelError && (
+                                    <p className="text-white/30 text-xs">
+                                        {modelDownloadProgress >= 0
+                                            ? 'First-time setup only. This won\'t happen again.'
+                                            : 'This usually takes a few seconds.'}
+                                    </p>
+                                )}
                             </div>
                         </div>
                     </motion.div>
@@ -607,6 +636,6 @@ export default function App() {
                     </motion.button>
                 )}
             </AnimatePresence>
-        </div>
+        </div >
     );
 }

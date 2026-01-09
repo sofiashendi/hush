@@ -15,6 +15,7 @@ interface Window {
         switchModel: (modelType: string) => Promise<boolean>;
         onDownloadProgress: (callback: (percent: number) => void) => () => void;
         onModelReady: (callback: () => void) => () => void;
+        onModelError: (callback: (message: string) => void) => () => void;
         isModelReady: () => Promise<boolean>;
         log: (message: string) => void;
     }

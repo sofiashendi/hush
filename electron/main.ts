@@ -5,6 +5,7 @@ import fs from 'fs';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from 'ffmpeg-static';
 import os from 'os';
+import { randomBytes } from 'crypto';
 import { Whisper } from 'smart-whisper';
 import { modelManager, ModelType } from './models';
 
@@ -523,9 +524,10 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer, aiPolish) => {
         }
     }
 
-    // Create temp files for conversion
-    const tempInput = path.join(os.tmpdir(), `hush-input-${Date.now()}.webm`);
-    const tempPcm = path.join(os.tmpdir(), `hush-output-${Date.now()}.pcm`);
+    // Create temp files for conversion (use timestamp + random to prevent collisions)
+    const uniqueId = `${Date.now()}-${randomBytes(4).toString('hex')}`;
+    const tempInput = path.join(os.tmpdir(), `hush-input-${uniqueId}.webm`);
+    const tempPcm = path.join(os.tmpdir(), `hush-output-${uniqueId}.pcm`);
 
     try {
         // Write input buffer to temp file

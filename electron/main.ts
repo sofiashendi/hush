@@ -426,6 +426,11 @@ const initWhisper = async () => {
             }
             whisperInstance = new Whisper(modelPath, { gpu: true });
             console.log('[Whisper] Ready.');
+
+            // Notify renderer that model is ready
+            if (mainWindow) {
+                mainWindow.webContents.send('model-ready');
+            }
         } else {
             console.error('[Whisper] Model not found and download failed!');
         }
@@ -433,6 +438,11 @@ const initWhisper = async () => {
         console.error('[Whisper] Initialization failed:', err);
     }
 };
+
+// IPC handler to check if model is ready
+ipcMain.handle('is-model-ready', () => {
+    return whisperInstance !== null;
+});
 
 // Initial init
 const cleanupTempFiles = () => {

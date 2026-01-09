@@ -25,5 +25,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('download-progress', cb);
         return () => ipcRenderer.removeListener('download-progress', cb);
     },
+    onModelReady: (callback: () => void) => {
+        const cb = () => callback();
+        ipcRenderer.on('model-ready', cb);
+        return () => ipcRenderer.removeListener('model-ready', cb);
+    },
+    isModelReady: () => ipcRenderer.invoke('is-model-ready'),
     log: (message: string) => ipcRenderer.send('renderer-log', message),
 });

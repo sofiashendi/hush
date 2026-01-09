@@ -17,6 +17,8 @@ export default function App() {
     // UI State
     const [isMinimized, setIsMinimized] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
+    const [isModelReady, setIsModelReady] = useState(false);
+    const [modelDownloadProgress, setModelDownloadProgress] = useState(-1); // -1 = not downloading
 
     // Config State
     const [apiUrl, setApiUrl] = useState('');
@@ -42,10 +44,12 @@ export default function App() {
     const statusRef = useRef(status);
     const autoPasteRef = useRef(autoPaste);
     const lastToggleTimeRef = useRef<number>(0);
+    const isModelReadyRef = useRef(isModelReady);
 
     // Sync Refs
     useEffect(() => { statusRef.current = status; }, [status]);
     useEffect(() => { autoPasteRef.current = autoPaste; }, [autoPaste]);
+    useEffect(() => { isModelReadyRef.current = isModelReady; }, [isModelReady]);
 
     // Load Config
     const loadConfig = async () => {
@@ -70,6 +74,26 @@ export default function App() {
             handleToggle();
         });
 
+        // Listen for model ready event
+        const removeModelReadyListener = window.electronAPI.onModelReady(() => {
+            console.log('[App] Model ready!');
+            setIsModelReady(true);
+            setModelDownloadProgress(-1);
+        });
+
+        // Listen for download progress (initial model download)
+        const removeDownloadListener = window.electronAPI.onDownloadProgress((percent) => {
+            console.log(`[App] Download progress: ${percent}%`);
+            setModelDownloadProgress(percent);
+        });
+
+        // Check if model is already ready
+        window.electronAPI.isModelReady().then((ready) => {
+            if (ready) {
+                setIsModelReady(true);
+            }
+        });
+
         loadConfig();
         initAudio();
 
@@ -79,6 +103,8 @@ export default function App() {
             console.error = originalError;
 
             removeToggleListener();
+            removeModelReadyListener();
+            removeDownloadListener();
             if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
             if (audioContextRef.current) audioContextRef.current.close();
         };
@@ -105,7 +131,7 @@ export default function App() {
 
     const handleToggle = () => {
         console.log('[HandleToggle] Triggered. StatusRef:', statusRef.current);
-        if (showSettings) return;
+        if (showSettings || !isModelReadyRef.current) return;
         const now = Date.now();
         if (now - lastToggleTimeRef.current < 250) {
             console.log('[HandleToggle] Debounced');
@@ -379,7 +405,87 @@ export default function App() {
     return (
         <div className="min-h-screen bg-transparent flex items-center justify-center p-4">
             <AnimatePresence mode="wait">
-                {showSettings ? (
+                {!isModelReady ? (
+                    // Model loading/downloading screen
+                    <motion.div
+                        key="loading"
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        className="relative w-full max-w-md"
+                    >
+                        <div className="backdrop-blur-3xl bg-black/80 rounded-3xl border border-white/10 shadow-2xl overflow-hidden p-8">
+                            {/* Background glow */}
+                            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                                <motion.div
+                                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full blur-3xl"
+                                    style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}
+                                    animate={{
+                                        scale: [1, 1.2, 1],
+                                        opacity: [0.2, 0.3, 0.2],
+                                    }}
+                                    transition={{
+                                        duration: 3,
+                                        repeat: Infinity,
+                                        ease: 'easeInOut'
+                                    }}
+                                />
+                            </div>
+
+                            {/* Content */}
+                            <div className="relative z-10 text-center space-y-6">
+                                {/* App Icon */}
+                                <div className="w-16 h-16 mx-auto">
+                                    <AppIcon />
+                                </div>
+
+                                {/* Title */}
+                                <div>
+                                    <h1 className="text-white/90 text-xl font-medium mb-1">Hush</h1>
+                                    <p className="text-white/50 text-sm">
+                                        {modelDownloadProgress >= 0
+                                            ? 'Downloading AI model...'
+                                            : 'Initializing transcription engine...'}
+                                    </p>
+                                </div>
+
+                                {/* Progress bar (only when downloading) */}
+                                {modelDownloadProgress >= 0 && (
+                                    <div className="space-y-2">
+                                        <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                                            <motion.div
+                                                className="h-full rounded-full"
+                                                style={{ background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)' }}
+                                                initial={{ width: 0 }}
+                                                animate={{ width: `${modelDownloadProgress}%` }}
+                                                transition={{ duration: 0.3 }}
+                                            />
+                                        </div>
+                                        <p className="text-white/60 text-sm font-medium">
+                                            {modelDownloadProgress}%
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* Loading spinner (when not downloading) */}
+                                {modelDownloadProgress < 0 && (
+                                    <motion.div
+                                        className="w-8 h-8 mx-auto border-2 border-white/20 border-t-blue-500 rounded-full"
+                                        animate={{ rotate: 360 }}
+                                        transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                                    />
+                                )}
+
+                                {/* Tip */}
+                                <p className="text-white/30 text-xs">
+                                    {modelDownloadProgress >= 0
+                                        ? 'First-time setup only. This won\'t happen again.'
+                                        : 'This usually takes a few seconds.'}
+                                </p>
+                            </div>
+                        </div>
+                    </motion.div>
+                ) : showSettings ? (
                     <SettingsPanel
                         key="settings"
                         onClose={() => {

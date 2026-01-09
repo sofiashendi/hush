@@ -14,6 +14,8 @@ interface Window {
         saveConfig: (config: any) => Promise<boolean>;
         switchModel: (modelType: string) => Promise<boolean>;
         onDownloadProgress: (callback: (percent: number) => void) => () => void;
+        onModelReady: (callback: () => void) => () => void;
+        isModelReady: () => Promise<boolean>;
         log: (message: string) => void;
     }
 }

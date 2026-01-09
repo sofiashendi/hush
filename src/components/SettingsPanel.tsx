@@ -26,19 +26,15 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   }, []);
 
   const handleSave = async () => {
-    console.log('[Settings] Save clicked');
     try {
-      console.log('[Settings] Saving config...');
       await window.electronAPI.saveConfig({
         model: model,
         autoPaste: autoPaste
       });
-      console.log('[Settings] Config saved');
     } catch (err) {
       console.error("[Settings] Failed to save settings:", err);
     }
     // Always close after save attempt
-    console.log('[Settings] Calling onClose');
     onClose();
   };
 
@@ -118,7 +114,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               const isSelected = model === m;
               const labels: Record<string, string> = { 'base': 'Base', 'small': 'Small', 'large-v3-turbo': 'Large' };
               const sublabels: Record<string, string> = { 'base': 'Fast & Lightweight', 'small': 'Balanced', 'large-v3-turbo': 'Max Accuracy' };
-              const details: Record<string, string> = { 'base': '~150MB', 'small': '~500MB', 'large-v3-turbo': '~1.5GB' };
+              const details: Record<string, string> = { 'base': '~60MB', 'small': '~190MB', 'large-v3-turbo': '~550MB' };
 
               return (
                 <button

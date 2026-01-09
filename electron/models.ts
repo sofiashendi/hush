@@ -5,22 +5,22 @@ import https from 'https';
 
 export type ModelType = 'base' | 'small' | 'large-v3-turbo';
 
-// Multilingual Models
+// Multilingual Quantized Models (q5_1 for best size/quality balance)
 const MODELS: Record<ModelType, { filename: string; url: string; size: number }> = {
   'base': {
-    filename: 'ggml-base.bin',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
-    size: 147964211 // ~148MB (Multilingual)
+    filename: 'ggml-base-q5_1.bin',
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin',
+    size: 62606336 // ~60MB (Multilingual, Quantized q5_1)
   },
   'small': {
-    filename: 'ggml-small.bin',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
-    size: 488267035 // ~488MB (Multilingual)
+    filename: 'ggml-small-q5_1.bin',
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin',
+    size: 199238656 // ~190MB (Multilingual, Quantized q5_1)
   },
   'large-v3-turbo': {
-    filename: 'ggml-large-v3-turbo-q5_0.bin', // Already multilingual usually
+    filename: 'ggml-large-v3-turbo-q5_0.bin',
     url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin',
-    size: 574443520 // ~574MB
+    size: 574443520 // ~550MB (Multilingual, Quantized q5_0)
   }
 };
 

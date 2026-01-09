@@ -2,6 +2,11 @@
 
 A sleek, native-feeling macOS application that captures speech, converts it to text using **Local Intelligence (Whisper.cpp)**, and copies it to your clipboard for instant pasting.
 
+Created by Sofia Shendi
+https://sofiashendi.com
+
+<img width="1394" height="881" alt="Idle State" src="https://github.com/user-attachments/assets/d5104a6c-92b7-4b79-b956-d50b6d22fa57" />
+
 ## Features
 - **Global Shortcut**: Press `Cmd + '` (Single Quote) to toggle the recorder from anywhere.
 - **Native UI**: Draggable, transparent, and non-intrusive design.

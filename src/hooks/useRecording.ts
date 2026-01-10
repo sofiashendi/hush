@@ -42,7 +42,6 @@ export function useRecording({ isModelReadyRef, autoPasteRef, showSettings }: Us
     // VAD Refs
     const silenceStartRef = useRef<number | null>(null);
     const isSpeakingRef = useRef<boolean>(false);
-    const hasPlaceholderRef = useRef<boolean>(false);
     const transcriptionQueueRef = useRef<Promise<void>>(Promise.resolve());
     const statusRef = useRef(status);
     const lastToggleTimeRef = useRef<number>(0);
@@ -119,9 +118,7 @@ export function useRecording({ isModelReadyRef, autoPasteRef, showSettings }: Us
                         return prev + space + cleanedText;
                     });
 
-                    const deleteCount = hasPlaceholderRef.current ? 3 : 0;
-                    await window.electronAPI.pasteText(cleanedText + ' ', autoPasteRef.current, deleteCount);
-                    hasPlaceholderRef.current = false;
+                    await window.electronAPI.pasteText(cleanedText + ' ', autoPasteRef.current);
                 }
             }
             if (!isSegment) setStatus('idle');

@@ -83,14 +83,14 @@ export class ModelManager {
         https.get(url, (response) => {
           // Handle redirects (301, 302, 303, 307, 308)
           if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-            file.close();
+            file.destroy();
             cleanupDestFile();
             console.log(`[ModelManager] Following redirect to: ${response.headers.location}`);
             return resolve(downloadWithRedirects(response.headers.location, redirectCount + 1));
           }
 
           if (response.statusCode !== 200) {
-            file.close();
+            file.destroy();
             cleanupDestFile();
             return reject(new Error(`Failed to download: ${response.statusCode}`));
           }
@@ -114,12 +114,12 @@ export class ModelManager {
           });
 
           response.on('error', (err) => {
-            file.close();
+            file.destroy();
             cleanupDestFile();
             reject(err);
           });
         }).on('error', (err) => {
-          file.close();
+          file.destroy();
           cleanupDestFile();
           reject(err);
         });

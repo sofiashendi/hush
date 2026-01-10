@@ -38,7 +38,7 @@ ipcMain.handle('remove-placeholder', async () => {
 });
 
 // Smart paste with role detection
-ipcMain.handle('paste-text', async (event, text, autoPaste = false, deleteCount = 0) => {
+ipcMain.handle('paste-text', async (event, text, autoPaste = false) => {
     console.log('Copying text to clipboard:', text);
     clipboard.writeText(text);
 

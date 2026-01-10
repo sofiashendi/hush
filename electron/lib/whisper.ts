@@ -101,6 +101,7 @@ export const initWhisper = async () => {
             // Free previous instance if exists
             if (whisperInstance) {
                 await whisperInstance.free();
+                whisperInstance = null;
             }
             whisperInstance = new Whisper(modelPath, { gpu: true });
             console.log('[Whisper] Ready.');

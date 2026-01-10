@@ -11,7 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('open-settings', cb);
         return () => ipcRenderer.removeListener('open-settings', cb);
     },
-    pasteText: (text: string, autoPaste: boolean, deleteCount?: number) => ipcRenderer.invoke('paste-text', text, autoPaste, deleteCount),
+    pasteText: (text: string, autoPaste: boolean) => ipcRenderer.invoke('paste-text', text, autoPaste),
     typePlaceholder: () => ipcRenderer.invoke('type-placeholder'),
     removePlaceholder: () => ipcRenderer.invoke('remove-placeholder'),
     setTrayTitle: (title: string) => ipcRenderer.invoke('set-tray-title', title),

@@ -32,10 +32,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         model: model,
         autoPaste: autoPaste
       });
+      onClose();
     } catch (err) {
       console.error("[Settings] Failed to save settings:", err);
     }
-    onClose();
   };
 
   useEffect(() => {

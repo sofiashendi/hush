@@ -1,13 +1,20 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
+import { ModelType } from './models';
+
+// Type-safe configuration interface
+export interface AppConfig {
+    model?: ModelType;
+    autoPaste?: boolean;
+}
 
 // Config Storage Logic
 const getConfigPath = () => {
     return path.join(app.getPath('userData'), 'config.json');
 };
 
-export const loadConfig = () => {
+export const loadConfig = (): AppConfig => {
     try {
         const configPath = getConfigPath();
         if (fs.existsSync(configPath)) {
@@ -20,7 +27,7 @@ export const loadConfig = () => {
                 saveConfig(config);
             }
 
-            return config;
+            return config as AppConfig;
         }
     } catch (error) {
         console.error('Error loading config:', error);
@@ -28,7 +35,7 @@ export const loadConfig = () => {
     return {};
 };
 
-export const saveConfig = (newConfig: any) => {
+export const saveConfig = (newConfig: AppConfig): boolean => {
     try {
         const configPath = getConfigPath();
         fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 2));

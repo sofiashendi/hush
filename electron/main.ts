@@ -599,9 +599,6 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
 
         console.log(`[Whisper] Result: "${text}"`);
 
-        // Cleanup temp files (async to not block return)
-        setTimeout(cleanupTranscriptionFiles, 100);
-
         const HALLUCINATION_PATTERNS = [
             /^\s*\.+\s*$/,
             /^[\u3000-\u9FAF\uFF00-\uFFEF\s]+$/,
@@ -619,7 +616,9 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
         return { text };
     } catch (error) {
         console.error('[Whisper] Transcription error:', error);
-        cleanupTranscriptionFiles();
         throw error;
+    } finally {
+        // Always cleanup temp files
+        cleanupTranscriptionFiles();
     }
 });

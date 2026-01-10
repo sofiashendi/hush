@@ -84,7 +84,7 @@ export class ModelManager {
           // Handle redirects (301, 302, 303, 307, 308)
           if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
             file.destroy();
-            cleanupDestFile();
+            // Don't cleanup - the recursive call will create a new file
             console.log(`[ModelManager] Following redirect to: ${response.headers.location}`);
             return resolve(downloadWithRedirects(response.headers.location, redirectCount + 1));
           }
@@ -109,8 +109,24 @@ export class ModelManager {
 
           response.on('end', () => {
             file.end();
-            console.log(`[ModelManager] Download complete: ${destPath}`);
-            resolve(destPath);
+          });
+
+          file.on('finish', () => {
+            // Verify the file actually exists
+            if (fs.existsSync(destPath)) {
+              const stats = fs.statSync(destPath);
+              console.log(`[ModelManager] Download complete: ${destPath} (${stats.size} bytes)`);
+              resolve(destPath);
+            } else {
+              console.error(`[ModelManager] CRITICAL: File not found after download: ${destPath}`);
+              reject(new Error('File not found after download'));
+            }
+          });
+
+          file.on('error', (err) => {
+            console.error(`[ModelManager] File stream error: ${err.message}`);
+            cleanupDestFile();
+            reject(err);
           });
 
           response.on('error', (err) => {

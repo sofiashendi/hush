@@ -89,15 +89,15 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       </div>
 
       {/* Content */}
-      <div className="p-8 bg-white/[0.03]">
+      <div style={{ padding: '32px', backgroundColor: 'rgba(255,255,255,0.03)' }}>
         {/* Model Selection */}
-        <div className="mb-6">
-          <div className="flex items-center gap-3 mb-4">
-            <label className="text-white/90 font-medium text-base">
+        <div style={{ marginBottom: '24px' }}>
+          <div className="flex items-center gap-3" style={{ marginBottom: '16px' }}>
+            <label style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 500, fontSize: '16px' }}>
               Transcription Model
             </label>
             {isDownloading && (
-              <span className="text-xs font-medium" style={{ color: '#60a5fa' }}>
+              <span style={{ fontSize: '12px', color: '#60a5fa', fontWeight: 500 }}>
                 {downloadProgress < 0 ? 'Switching...' : downloadProgress < 100 ? `Downloading ${downloadProgress}%` : 'Finalizing...'}
               </span>
             )}
@@ -111,18 +111,23 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   key={m.id}
                   onClick={() => handleModelChange(m.id)}
                   disabled={isDownloading}
-                  className={`flex flex-col p-4 rounded-[12px] border-2 text-left transition-all ${isSelected
-                    ? 'border-[#3b82f6] bg-[rgba(59,130,246,0.15)]'
-                    : 'border-white/10 bg-white/5 hover:bg-white/10'
-                    } ${isDownloading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                  className="flex flex-col text-left transition-all"
+                  style={{
+                    padding: '16px',
+                    borderRadius: '12px',
+                    border: isSelected ? '2px solid #3b82f6' : '2px solid rgba(255,255,255,0.1)',
+                    backgroundColor: isSelected ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.05)',
+                    cursor: isDownloading ? 'not-allowed' : 'pointer',
+                    opacity: isDownloading ? 0.5 : 1,
+                  }}
                 >
-                  <div className="flex justify-between items-center mb-1">
-                    <span className={`font-semibold text-[15px] ${isSelected ? 'text-white' : 'text-white/80'}`}>
+                  <div className="flex justify-between items-center" style={{ marginBottom: '4px' }}>
+                    <span style={{ fontWeight: 600, fontSize: '15px', color: isSelected ? '#fff' : 'rgba(255,255,255,0.8)' }}>
                       {m.label}
                     </span>
-                    <span className="text-[11px] text-white/40">{m.size}</span>
+                    <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>{m.size}</span>
                   </div>
-                  <span className="text-xs text-white/50">{m.sublabel}</span>
+                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{m.sublabel}</span>
                 </button>
               );
             })}
@@ -130,7 +135,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
           {/* Progress Bar */}
           {isDownloading && (
-            <div className="relative w-full h-1.5 bg-black/30 rounded overflow-hidden mt-4">
+            <div className="relative w-full overflow-hidden" style={{ height: '6px', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: '3px', marginTop: '16px' }}>
               <motion.div
                 className="absolute h-full"
                 style={{ background: 'linear-gradient(to right, #3b82f6, #60a5fa)' }}
@@ -143,32 +148,57 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
           {/* Error Message */}
           {modelError && (
-            <div className="mt-4 px-4 py-3 rounded-lg text-sm" style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#fca5a5' }}>
+            <div style={{
+              marginTop: '16px',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              color: '#fca5a5',
+              fontSize: '14px',
+            }}>
               {modelError}
             </div>
           )}
         </div>
 
         {/* Divider */}
-        <div className="h-px bg-white/10 mb-6" />
+        <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.1)', marginBottom: '24px' }} />
 
         {/* Auto-paste toggle */}
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-white/90 font-medium text-base mb-1">
+            <h3 style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 500, fontSize: '16px', marginBottom: '4px' }}>
               Auto-Paste Text
             </h3>
-            <p className="text-white/50 text-sm max-w-xs">
+            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px', maxWidth: '320px' }}>
               Automatically pastes the text into your active window after transcription.
             </p>
           </div>
           <button
             onClick={() => setAutoPaste(!autoPaste)}
-            className={`relative w-[52px] h-8 rounded-2xl border-0 cursor-pointer transition-colors flex-shrink-0`}
-            style={{ backgroundColor: autoPaste ? '#3b82f6' : 'rgba(255,255,255,0.1)' }}
+            className="relative flex-shrink-0"
+            style={{
+              width: '52px',
+              height: '32px',
+              borderRadius: '16px',
+              backgroundColor: autoPaste ? '#3b82f6' : 'rgba(255,255,255,0.1)',
+              border: 'none',
+              cursor: 'pointer',
+              transition: 'background-color 0.2s ease',
+            }}
           >
             <motion.div
-              className="absolute top-1 left-1 w-6 h-6 rounded-xl bg-white shadow-md"
+              className="absolute"
+              style={{
+                top: '4px',
+                left: '4px',
+                width: '24px',
+                height: '24px',
+                borderRadius: '12px',
+                backgroundColor: '#fff',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+              }}
               animate={{ x: autoPaste ? 20 : 0 }}
               transition={{ type: 'spring', stiffness: 500, damping: 30 }}
             />
@@ -177,17 +207,36 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       </div>
 
       {/* Footer */}
-      <div className="px-6 py-4 border-t border-white/10 bg-white/[0.03] flex justify-end gap-3">
+      <div className="flex justify-end gap-3" style={{
+        padding: '16px 24px',
+        borderTop: '1px solid rgba(255,255,255,0.1)',
+        backgroundColor: 'rgba(255,255,255,0.03)',
+      }}>
         <button
           onClick={onClose}
-          className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white/70 text-sm cursor-pointer hover:bg-white/10 transition-colors"
+          style={{
+            padding: '8px 16px',
+            borderRadius: '8px',
+            backgroundColor: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            color: 'rgba(255,255,255,0.7)',
+            fontSize: '14px',
+            cursor: 'pointer',
+          }}
         >
           Cancel
         </button>
         <button
           onClick={handleSave}
-          className="px-4 py-2 rounded-lg border-0 text-white text-sm cursor-pointer hover:opacity-90 transition-opacity"
-          style={{ background: 'linear-gradient(to right, #3b82f6, #22c55e)' }}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '8px',
+            background: 'linear-gradient(to right, #3b82f6, #22c55e)',
+            border: 'none',
+            color: '#fff',
+            fontSize: '14px',
+            cursor: 'pointer',
+          }}
         >
           Save Changes
         </button>

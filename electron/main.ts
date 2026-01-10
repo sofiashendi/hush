@@ -142,6 +142,10 @@ app.whenReady().then(() => {
         app.dock?.show();
     }
 
+    // Initialize whisper and cleanup temp files
+    cleanupTempFiles();
+    initWhisper();
+
     createWindow();
 
     // Register global shortcut
@@ -174,11 +178,6 @@ app.whenReady().then(() => {
     });
 });
 
-// Initialize whisper and cleanup on ready
-app.whenReady().then(() => {
-    cleanupTempFiles();
-    initWhisper();
-});
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {

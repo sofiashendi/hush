@@ -16,7 +16,7 @@ https://sofiashendi.com
 - **Auto-Paste**: Automatically types your text into the active window (requires Accessibility permission).
 
 ## Models
-Hush comes with a bundled **Base** model that is fast and accurate for general dictation.
+Hush will automatically download the **Base** model on first launch, which is fast and accurate for general dictation.
 You can optionally download **Small** or **Large Turbo** models in the settings for higher accuracy.
 
 ## Prerequisites

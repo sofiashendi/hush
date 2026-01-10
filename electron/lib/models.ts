@@ -71,7 +71,12 @@ export class ModelManager {
       });
     };
 
-    const downloadWithRedirects = (url: string): Promise<string> => {
+    const downloadWithRedirects = (url: string, redirectCount = 0): Promise<string> => {
+      const MAX_REDIRECTS = 10;
+      if (redirectCount >= MAX_REDIRECTS) {
+        return Promise.reject(new Error('Exceeded maximum number of redirects'));
+      }
+
       return new Promise((resolve, reject) => {
         const file = fs.createWriteStream(destPath);
 
@@ -81,7 +86,7 @@ export class ModelManager {
             file.close();
             cleanupDestFile();
             console.log(`[ModelManager] Following redirect to: ${response.headers.location}`);
-            return resolve(downloadWithRedirects(response.headers.location));
+            return resolve(downloadWithRedirects(response.headers.location, redirectCount + 1));
           }
 
           if (response.statusCode !== 200) {

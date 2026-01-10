@@ -243,11 +243,16 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
                 tempPcm
             ]);
 
+            let stderr = '';
+            ffmpegProcess.stderr.on('data', (data) => {
+                stderr += data.toString();
+            });
+
             ffmpegProcess.on('close', (code) => {
                 if (code === 0) {
                     resolve();
                 } else {
-                    reject(new Error(`ffmpeg exited with code ${code}`));
+                    reject(new Error(`ffmpeg exited with code ${code}: ${stderr}`));
                 }
             });
 
@@ -276,7 +281,7 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
         const HALLUCINATION_PATTERNS = [
             /^\s*\.+\s*$/,                          // Only periods/whitespace
             /^[\u3000-\u9FAF\uFF00-\uFFEF\s]+$/,    // Only CJK/fullwidth chars
-            /\[.*\]/,                               // Filters out [MUSIC], [APPLAUSE], etc.
+            /^\s*\[.*\]\s*$/,                       // Filters out [MUSIC], [APPLAUSE], etc.
             /^\s*Connect specific.*\s*$/            // Common Whisper hallucination
         ];
 

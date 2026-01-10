@@ -8,6 +8,13 @@ import { randomBytes } from 'crypto';
 import { Whisper } from 'smart-whisper';
 import { modelManager, ModelType } from './models';
 
+// Type for Whisper transcription result segments
+interface WhisperSegment {
+    text: string;
+    start?: number;
+    end?: number;
+}
+
 // Resolve ffmpeg binary path
 // Note: ffmpeg-static path needs special handling in Electron dev/prod environments
 let resolvedFfmpegPath = ffmpegPathImport || 'ffmpeg';
@@ -22,19 +29,17 @@ if (ffmpegPathImport) {
         if (!fs.existsSync(resolvedFfmpegPath)) {
             console.warn(`[FFMPEG] Default path not found: ${resolvedFfmpegPath}. Searching alternatives...`);
 
-            const candidates = [
-                path.join(app.getAppPath(), 'node_modules/ffmpeg-static/ffmpeg'),
-                path.join(process.cwd(), 'node_modules/ffmpeg-static/ffmpeg'),
-                path.join(__dirname, '../node_modules/ffmpeg-static/ffmpeg'),
-                path.join(__dirname, '../../node_modules/ffmpeg-static/ffmpeg')
-            ];
-
-            for (const candidate of candidates) {
+            // Use require.resolve to programmatically find the ffmpeg-static package
+            try {
+                const ffmpegStaticPkgPath = require.resolve('ffmpeg-static/package.json');
+                const ffmpegStaticDir = path.dirname(ffmpegStaticPkgPath);
+                const candidate = path.join(ffmpegStaticDir, 'ffmpeg');
                 if (fs.existsSync(candidate)) {
-                    console.log(`[FFMPEG] Found executable at: ${candidate}`);
+                    console.log(`[FFMPEG] Found executable via require.resolve: ${candidate}`);
                     resolvedFfmpegPath = candidate;
-                    break;
                 }
+            } catch (e) {
+                console.warn('[FFMPEG] require.resolve failed:', e);
             }
         }
     }
@@ -449,24 +454,21 @@ ipcMain.handle('is-model-ready', () => {
 });
 
 // Initial init
-const cleanupTempFiles = () => {
+const cleanupTempFiles = async () => {
     try {
         const tmpDir = os.tmpdir();
-        const files = fs.readdirSync(tmpDir);
-        let count = 0;
-        files.forEach(file => {
-            if (file.startsWith('hush-input-') || file.startsWith('hush-output-')) {
-                const filePath = path.join(tmpDir, file);
-                // Optional: Check age to avoid deleting currently active files if duplicate instances?
-                // But generally safe on startup.
-                try {
-                    fs.unlinkSync(filePath);
-                    count++;
-                } catch (e) {
-                    // ignore locked files
-                }
-            }
-        });
+        const files = await fs.promises.readdir(tmpDir);
+        const hushFiles = files.filter(
+            file => file.startsWith('hush-input-') || file.startsWith('hush-output-')
+        );
+
+        if (hushFiles.length === 0) return;
+
+        const results = await Promise.allSettled(
+            hushFiles.map(file => fs.promises.unlink(path.join(tmpDir, file)))
+        );
+
+        const count = results.filter(r => r.status === 'fulfilled').length;
         if (count > 0) console.log(`[Cleanup] Removed ${count} temporary files.`);
     } catch (err) {
         console.error('[Cleanup] Failed to clean temp files:', err);
@@ -534,7 +536,7 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
         console.warn('[Whisper] Instance not ready, attempting re-init...');
         await initWhisper();
         if (!whisperInstance) {
-            throw new Error("Whisper not initialized");
+            throw new Error("Transcription engine could not be initialized. Please check logs for details.");
         }
     }
 
@@ -592,20 +594,18 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
 
         let text = "";
         if (Array.isArray(result)) {
-            text = result.map((r: any) => r.text).join(" ").trim();
+            text = (result as WhisperSegment[]).map(r => r.text).join(" ").trim();
         } else {
-            text = (result as any).text?.trim() || "";
+            text = (result as WhisperSegment).text?.trim() || "";
         }
 
         console.log(`[Whisper] Result: "${text}"`);
 
         const HALLUCINATION_PATTERNS = [
-            /^\s*\.+\s*$/,
-            /^[\u3000-\u9FAF\uFF00-\uFFEF\s]+$/,
-            /\[.*\]/,
-            /^\s*Connect specific.*\s*$/,
-            /I'm a programmer/,
-            /Thank you./
+            /^\s*\.+\s*$/,                          // Only periods/whitespace
+            /^[\u3000-\u9FAF\uFF00-\uFFEF\s]+$/,    // Only CJK/fullwidth chars
+            /\[.*\]/,                               // Filters out [MUSIC], [APPLAUSE], etc.
+            /^\s*Connect specific.*\s*$/            // Common Whisper hallucination
         ];
 
         if (HALLUCINATION_PATTERNS.some(p => p.test(text))) {

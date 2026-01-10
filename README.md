@@ -44,7 +44,7 @@ Since this app is not notarized by Apple, you must build it yourself for local u
     npm run dist
     ```
     The `.dmg` installer will be in the `dist/` folder.
-    *Note: The first build might take a moment to download the base model if not present.*
+    *Note: On first launch, the app will download the base model (~60MB), which may take a moment.*
 
 4.  **Install & Open**
     -   Open the `.dmg` and drag the app to Applications.

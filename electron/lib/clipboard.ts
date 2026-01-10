@@ -1,5 +1,5 @@
 import { ipcMain, clipboard, BrowserWindow } from 'electron';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 
 // Store reference to main window for focus checks
 let mainWindow: BrowserWindow | null = null;
@@ -18,7 +18,7 @@ ipcMain.handle('type-placeholder', async () => {
     // as it doesn't overwrite the clipboard.
     const script = `tell application "System Events" to keystroke "..."`;
 
-    exec(`osascript -e '${script}'`, (err) => {
+    execFile('osascript', ['-e', script], (err) => {
         if (err) console.error('Placeholder error:', err);
     });
 });
@@ -32,7 +32,7 @@ ipcMain.handle('remove-placeholder', async () => {
         end repeat
     end tell`;
 
-    exec(`osascript -e '${script}'`, (err) => {
+    execFile('osascript', ['-e', script], (err) => {
         if (err) console.error('Remove placeholder error:', err);
     });
 });
@@ -61,7 +61,7 @@ ipcMain.handle('paste-text', async (event, text, autoPaste = false, deleteCount 
                 end try
             end tell`;
 
-            exec(`osascript -e '${checkEditableScript}'`, (checkErr, checkStdout) => {
+            execFile('osascript', ['-e', checkEditableScript], (checkErr, checkStdout) => {
                 const role = checkStdout?.trim();
                 console.log(`[Smart Paste] Focused Role: ${role}`);
 
@@ -75,7 +75,7 @@ ipcMain.handle('paste-text', async (event, text, autoPaste = false, deleteCount 
                     // So we can just paste immediately!
 
                     const script = `tell application "System Events" to keystroke "v" using command down`;
-                    exec(`osascript -e '${script}'`, (error) => {
+                    execFile('osascript', ['-e', script], (error) => {
                         if (error) console.error('Auto-paste exec error:', error);
                     });
                 } else {

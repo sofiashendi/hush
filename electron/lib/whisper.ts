@@ -5,6 +5,27 @@ import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 import { app, ipcMain, BrowserWindow } from 'electron';
 import ffmpegPathImport from 'ffmpeg-static';
+
+// Fix Metal shader path for packaged app BEFORE importing smart-whisper
+// The GGML_METAL_PATH_RESOURCES environment variable tells whisper.cpp where to find ggml-metal.metal
+if (app.isPackaged) {
+    const metalShaderPath = path.join(
+        process.resourcesPath,
+        'app.asar.unpacked',
+        'node_modules',
+        'smart-whisper',
+        'whisper.cpp',
+        'ggml',
+        'src'
+    );
+    if (fs.existsSync(path.join(metalShaderPath, 'ggml-metal.metal'))) {
+        process.env.GGML_METAL_PATH_RESOURCES = metalShaderPath;
+        console.log('[Metal] Set shader path:', metalShaderPath);
+    } else {
+        console.warn('[Metal] Shader file not found at:', metalShaderPath);
+    }
+}
+
 import { Whisper } from 'smart-whisper';
 import { modelManager, ModelType } from './models';
 import { loadConfig, saveConfig } from './config';
@@ -21,9 +42,29 @@ interface WhisperSegment {
 let resolvedFfmpegPath = ffmpegPathImport || 'ffmpeg';
 
 if (ffmpegPathImport) {
-    // In production (packaged), ffmpeg is in app.asar.unpacked
     if (app.isPackaged) {
-        resolvedFfmpegPath = ffmpegPathImport.replace('app.asar', 'app.asar.unpacked');
+        // In production (packaged), ffmpeg is in app.asar.unpacked
+        const unpackedPath = ffmpegPathImport.replace('app.asar', 'app.asar.unpacked');
+        console.log(`[FFMPEG] Packaged mode. Original path: ${ffmpegPathImport}`);
+        console.log(`[FFMPEG] Trying unpacked path: ${unpackedPath}`);
+
+        if (fs.existsSync(unpackedPath)) {
+            resolvedFfmpegPath = unpackedPath;
+            console.log(`[FFMPEG] Found at unpacked path: ${resolvedFfmpegPath}`);
+        } else {
+            // Try alternative: look in the resources directory
+            const resourcePath = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', 'ffmpeg');
+            console.log(`[FFMPEG] Unpacked path not found, trying resources: ${resourcePath}`);
+            if (fs.existsSync(resourcePath)) {
+                resolvedFfmpegPath = resourcePath;
+                console.log(`[FFMPEG] Found at resources path: ${resolvedFfmpegPath}`);
+            } else {
+                console.error(`[FFMPEG] CRITICAL: Could not find ffmpeg binary in packaged app!`);
+                console.error(`[FFMPEG] Tried: ${unpackedPath}`);
+                console.error(`[FFMPEG] Tried: ${resourcePath}`);
+                resolvedFfmpegPath = 'ffmpeg'; // System fallback (unlikely to work in sandboxed app)
+            }
+        }
     } else {
         // In Development, the bundled path might be wrong.
         // We verify the existence and fall back to known locations.

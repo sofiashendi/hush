@@ -545,11 +545,13 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
     const tempInput = path.join(os.tmpdir(), `hush-input-${uniqueId}.webm`);
     const tempPcm = path.join(os.tmpdir(), `hush-output-${uniqueId}.pcm`);
 
-    // Helper to cleanup temp files
-    const cleanupTranscriptionFiles = () => {
+    // Helper to cleanup temp files (async to avoid blocking main process)
+    const cleanupTranscriptionFiles = async () => {
         try {
-            if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
-            if (fs.existsSync(tempPcm)) fs.unlinkSync(tempPcm);
+            await Promise.allSettled([
+                fs.promises.rm(tempInput, { force: true }),
+                fs.promises.rm(tempPcm, { force: true })
+            ]);
         } catch (e) {
             console.error("Temp cleanup error:", e);
         }
@@ -558,7 +560,7 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
     try {
         // Write input buffer to temp file
         // Note: buffer coming from ipc is usually Uint8Array or Buffer
-        fs.writeFileSync(tempInput, Buffer.from(audioBuffer));
+        await fs.promises.writeFile(tempInput, Buffer.from(audioBuffer));
 
         // Convert to 16kHz mono raw float32 PCM using ffmpeg
         await new Promise<void>((resolve, reject) => {
@@ -583,7 +585,7 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
         });
 
         // Read raw PCM file
-        const pcmBuffer = fs.readFileSync(tempPcm);
+        const pcmBuffer = await fs.promises.readFile(tempPcm);
         const float32Data = new Float32Array(pcmBuffer.buffer, pcmBuffer.byteOffset, pcmBuffer.length / 4);
 
         console.log(`[Whisper] PCM converted. Samples: ${float32Data.length}`);
@@ -619,6 +621,6 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
         throw error;
     } finally {
         // Always cleanup temp files
-        cleanupTranscriptionFiles();
+        await cleanupTranscriptionFiles();
     }
 });

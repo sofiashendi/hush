@@ -64,6 +64,13 @@ export class ModelManager {
     const config = MODELS[type];
     const destPath = path.join(this.userDataPath, config.filename);
 
+    // Helper for async cleanup without blocking
+    const cleanupDestFile = () => {
+      fs.promises.rm(destPath, { force: true }).catch(err => {
+        console.warn('[ModelManager] Cleanup warning:', err.message);
+      });
+    };
+
     const downloadWithRedirects = (url: string): Promise<string> => {
       return new Promise((resolve, reject) => {
         const file = fs.createWriteStream(destPath);
@@ -72,14 +79,14 @@ export class ModelManager {
           // Handle redirects (301, 302, 303, 307, 308)
           if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
             file.close();
-            fs.unlink(destPath, (err) => { if (err) console.warn('[ModelManager] Cleanup warning:', err.message); });
+            cleanupDestFile();
             console.log(`[ModelManager] Following redirect to: ${response.headers.location}`);
             return resolve(downloadWithRedirects(response.headers.location));
           }
 
           if (response.statusCode !== 200) {
             file.close();
-            fs.unlink(destPath, (err) => { if (err) console.warn('[ModelManager] Cleanup warning:', err.message); });
+            cleanupDestFile();
             return reject(new Error(`Failed to download: ${response.statusCode}`));
           }
 
@@ -103,12 +110,12 @@ export class ModelManager {
 
           response.on('error', (err) => {
             file.close();
-            fs.unlink(destPath, (err) => { if (err) console.warn('[ModelManager] Cleanup warning:', err.message); });
+            cleanupDestFile();
             reject(err);
           });
         }).on('error', (err) => {
           file.close();
-          fs.unlink(destPath, (err) => { if (err) console.warn('[ModelManager] Cleanup warning:', err.message); });
+          cleanupDestFile();
           reject(err);
         });
       });

@@ -10,6 +10,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [model, setModel] = useState('base');
   const [autoPaste, setAutoPaste] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [modelError, setModelError] = useState<string | null>(null);
 
   useEffect(() => {
     // Load config on mount
@@ -57,13 +58,14 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     if (newModel === model) return;
     setIsDownloading(true);
     setDownloadProgress(-1); // -1 means "switching, not downloading"
+    setModelError(null); // Clear any previous error
     try {
       // Trigger model switch (might download)
       await window.electronAPI.switchModel(newModel);
       setModel(newModel);
     } catch (err) {
       console.error("Failed to switch model:", err);
-      alert("Failed to switch model. The model may still be loading or there was an error.");
+      setModelError("Failed to switch model. The model may still be loading or there was an error.");
     } finally {
       setIsDownloading(false);
       setDownloadProgress(0);
@@ -155,6 +157,21 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 animate={{ width: `${downloadProgress}%` }}
                 transition={{ ease: "easeOut" }}
               />
+            </div>
+          )}
+
+          {/* Error Message */}
+          {modelError && (
+            <div style={{
+              marginTop: '16px',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              color: '#fca5a5',
+              fontSize: '14px',
+            }}>
+              {modelError}
             </div>
           )}
         </div>

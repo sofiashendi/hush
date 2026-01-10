@@ -1,70 +1,27 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AppIcon } from './components/AppIcon';
 import { MicrophoneButton } from './components/MicrophoneButton';
 import { LiveTranscript } from './components/LiveTranscript';
 import { SettingsPanel } from './components/SettingsPanel';
 import { Settings, X } from 'lucide-react';
-import { calculateRMS } from './utils/audioUtils';
+import { useModelStatus, useConfig, useRecording } from './hooks';
 
 export default function App() {
-    // Logic State
-    const [status, setStatus] = useState<'idle' | 'starting' | 'recording' | 'processing' | 'error'>('idle');
-    const [duration, setDuration] = useState(0);
-    const [wordCount, setWordCount] = useState<number | null>(null);
-    const [transcript, setTranscript] = useState('');
-
     // UI State
     const [isMinimized, setIsMinimized] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
-    const [isModelReady, setIsModelReady] = useState(false);
-    const [modelDownloadProgress, setModelDownloadProgress] = useState(-1); // -1 = not downloading
-    const [modelError, setModelError] = useState<string | null>(null);
 
-    // Config State
-    const [apiUrl, setApiUrl] = useState('');
-    const [apiKey, setApiKey] = useState('');
-    const [autoPaste, setAutoPaste] = useState(false);
+    // Hooks
+    const { isModelReady, isModelReadyRef, modelDownloadProgress, modelError } = useModelStatus();
+    const { autoPasteRef, loadConfig } = useConfig();
+    const { status, duration, wordCount, transcript, handleToggle } = useRecording({
+        isModelReadyRef,
+        autoPasteRef,
+        showSettings
+    });
 
-    // Refs
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const audioChunksRef = useRef<Blob[]>([]);
-    const timerRef = useRef<number | null>(null);
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const analyserRef = useRef<AnalyserNode | null>(null);
-    const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-    const maxVolumeRef = useRef<number>(0);
-    const animationFrameRef = useRef<number | null>(null);
-    const streamRef = useRef<MediaStream | null>(null);
-
-    // Continuous Dictation Refs
-    const silenceStartRef = useRef<number | null>(null);
-    const isSpeakingRef = useRef<boolean>(false);
-    const hasPlaceholderRef = useRef<boolean>(false);
-    const transcriptionQueueRef = useRef<Promise<void>>(Promise.resolve());
-    const statusRef = useRef(status);
-    const autoPasteRef = useRef(autoPaste);
-    const lastToggleTimeRef = useRef<number>(0);
-    const isModelReadyRef = useRef(isModelReady);
-
-    // Sync Refs
-    useEffect(() => { statusRef.current = status; }, [status]);
-    useEffect(() => { autoPasteRef.current = autoPaste; }, [autoPaste]);
-    useEffect(() => { isModelReadyRef.current = isModelReady; }, [isModelReady]);
-
-    // Load Config
-    const loadConfig = async () => {
-        try {
-            const config = await window.electronAPI.getConfig();
-            if (config.apiUrl) setApiUrl(config.apiUrl);
-            if (config.apiKey) setApiKey(config.apiKey);
-            if (config.autoPaste !== undefined) setAutoPaste(config.autoPaste);
-            // Note: No longer auto-opening settings - local Whisper doesn't need API keys
-        } catch (e) {
-            console.error("Config load error", e);
-        }
-    };
-
+    // Console logging for main process
     useEffect(() => {
         const originalLog = console.log;
         const originalError = console.error;
@@ -75,342 +32,14 @@ export default function App() {
             handleToggle();
         });
 
-        // Listen for model ready event
-        const removeModelReadyListener = window.electronAPI.onModelReady(() => {
-            console.log('[App] Model ready!');
-            setIsModelReady(true);
-            setModelDownloadProgress(-1);
-            setModelError(null);
-        });
-
-        // Listen for model error event
-        const removeModelErrorListener = window.electronAPI.onModelError((message) => {
-            console.error('[App] Model error:', message);
-            setModelError(message);
-            setModelDownloadProgress(-1);
-        });
-
-        // Listen for download progress (initial model download)
-        const removeDownloadListener = window.electronAPI.onDownloadProgress((percent) => {
-            console.log(`[App] Download progress: ${percent}%`);
-            setModelDownloadProgress(percent);
-        });
-
-        // Check if model is already ready
-        window.electronAPI.isModelReady().then((ready) => {
-            if (ready) {
-                setIsModelReady(true);
-            }
-        });
-
-        loadConfig();
-        initAudio();
-
         return () => {
-            // Restore console to prevent N-wrapping on HMR
             console.log = originalLog;
             console.error = originalError;
-
             removeToggleListener();
-            removeModelReadyListener();
-            removeModelErrorListener();
-            removeDownloadListener();
-            if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
-            if (audioContextRef.current) audioContextRef.current.close();
         };
-    }, []);
-
-    const initAudio = async () => {
-        if (streamRef.current) return;
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            streamRef.current = stream;
-            const audioContext = new AudioContext();
-            const analyser = audioContext.createAnalyser();
-            const source = audioContext.createMediaStreamSource(stream);
-            source.connect(analyser);
-            sourceRef.current = source; // Keep ref
-            analyser.fftSize = 2048;
-            audioContextRef.current = audioContext;
-            analyserRef.current = analyser;
-            console.log('Microphone ready.');
-        } catch (err) {
-            console.error('Failed to init microphone:', err);
-        }
-    };
-
-    const handleToggle = () => {
-        console.log('[HandleToggle] Triggered. StatusRef:', statusRef.current);
-        if (showSettings || !isModelReadyRef.current) return;
-        const now = Date.now();
-        if (now - lastToggleTimeRef.current < 250) {
-            console.log('[HandleToggle] Debounced');
-            return;
-        }
-        lastToggleTimeRef.current = now;
-
-        if (statusRef.current === 'recording') {
-            console.log('[HandleToggle] Stopping...');
-            stopRecording();
-        }
-        else if (statusRef.current === 'idle') {
-            console.log('[HandleToggle] Starting...');
-            startRecording();
-        }
-    };
-
-    const startRecording = async () => {
-        if (statusRef.current !== 'idle') return;
-        setTranscript('');
-
-        if (!streamRef.current || !audioContextRef.current) {
-            await initAudio();
-            if (!streamRef.current) return;
-        }
-
-        setStatus('starting');
-        statusRef.current = 'starting'; // Manual sync for immediate loop check
-
-        try {
-            const stream = streamRef.current!;
-            const audioContext = audioContextRef.current!;
-            const analyser = analyserRef.current!;
-
-            if (audioContext.state === 'suspended') await audioContext.resume();
-
-            maxVolumeRef.current = 0;
-            silenceStartRef.current = null;
-            isSpeakingRef.current = false;
-            audioChunksRef.current = [];
-
-            // Track segment start time for minimum duration validation
-            let segmentStartTime = Date.now();
-
-            let isVadTriggered = false;
-            let isFlushing = false;
-            const lastFlushTimeRef = { current: Date.now() };
-            const lastActivityTimeRef = { current: Date.now() };
-            const MIN_SEGMENT_DURATION_MS = 400; // Minimum audio duration to send
-            const MIN_FLUSH_INTERVAL_MS = 1000; // Rate limit: max 1 flush per second
-
-            const flushSegment = () => {
-                if (isFlushing) return;
-
-                const now = Date.now();
-                const segmentDuration = now - segmentStartTime;
-                const timeSinceLastFlush = now - lastFlushTimeRef.current;
-
-                // Rate limiting: but DON'T discard - just delay the flush
-                if (timeSinceLastFlush < MIN_FLUSH_INTERVAL_MS) {
-                    // Don't log this - happens every frame
-                    return; // Audio keeps accumulating, will flush on next check
-                }
-
-                // Minimum duration check
-                if (segmentDuration < MIN_SEGMENT_DURATION_MS) {
-                    return;
-                }
-
-                // Don't flush if it was just silence (threshold lowered to match speech detection)
-                const isSilence = maxVolumeRef.current < 5.0;
-                if (isSilence && !isSpeakingRef.current) {
-                    audioChunksRef.current = [];
-                    segmentStartTime = Date.now();
-                    lastFlushTimeRef.current = Date.now();
-                    maxVolumeRef.current = 0;
-                    return;
-                }
-
-                isFlushing = true;
-                isVadTriggered = true;
-
-                // Stop the recorder - onstop will process and restart
-                if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-                    mediaRecorderRef.current.stop();
-                } else {
-                    isFlushing = false;
-                    isVadTriggered = false;
-                }
-            };
-
-            const checkVolume = () => {
-                const dataArray = new Uint8Array(analyser.fftSize);
-                analyser.getByteTimeDomainData(dataArray);
-                const rms = calculateRMS(dataArray);
-                if (rms > maxVolumeRef.current) maxVolumeRef.current = rms;
-
-                const now = Date.now();
-
-                if (rms > 3.0) {
-                    lastActivityTimeRef.current = now;
-                }
-
-                // Speech detection (threshold lowered from 20 to 8 for quieter mics)
-                if (rms > 8.0) {
-                    silenceStartRef.current = null;
-                    isSpeakingRef.current = true;
-                } else {
-                    if (!silenceStartRef.current) silenceStartRef.current = now;
-                    else if (now - silenceStartRef.current > 1000 && isSpeakingRef.current) {
-                        flushSegment();
-                    }
-                }
-
-                // Safety limits for long recordings
-                const MAX_SEGMENT_SIZE_BYTES = 5 * 1024 * 1024;
-                const MAX_SEGMENT_DURATION_MS = 30 * 60 * 1000;
-                const currentSize = audioChunksRef.current.reduce((sum, chunk) => sum + chunk.size, 0);
-                const segmentAge = now - segmentStartTime;
-
-                if ((currentSize > MAX_SEGMENT_SIZE_BYTES || segmentAge > MAX_SEGMENT_DURATION_MS) && audioChunksRef.current.length > 0) {
-                    console.log(`[VAD] Safety flush: Size=${(currentSize / 1024 / 1024).toFixed(1)}MB`);
-                    isSpeakingRef.current = true;
-                    flushSegment();
-                }
-
-                if (statusRef.current === 'recording' || statusRef.current === 'starting') {
-                    animationFrameRef.current = requestAnimationFrame(checkVolume);
-                }
-            };
-            checkVolume();
-
-            // Helper to create and start a new MediaRecorder
-            const createMediaRecorder = () => {
-                const recorder = new MediaRecorder(stream);
-                mediaRecorderRef.current = recorder;
-
-                recorder.ondataavailable = (e) => {
-                    if (e.data.size > 0) {
-                        audioChunksRef.current.push(e.data);
-                    }
-                };
-
-                recorder.onstop = async () => {
-                    const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                    audioChunksRef.current = [];
-                    const sessionMaxVolume = maxVolumeRef.current;
-
-                    if (isVadTriggered) {
-                        // VAD flush - process and restart recorder
-                        isVadTriggered = false;
-                        isFlushing = false;
-                        lastFlushTimeRef.current = Date.now();
-                        segmentStartTime = Date.now();
-                        silenceStartRef.current = null;
-                        isSpeakingRef.current = false;
-                        maxVolumeRef.current = 0;
-
-                        // Process audio asynchronously
-                        transcriptionQueueRef.current = transcriptionQueueRef.current.then(async () => {
-                            if (blob.size > 0) {
-                                await processAudio(blob, true, sessionMaxVolume);
-                            }
-                        });
-
-                        // Restart recorder for next segment (if still recording)
-                        if (statusRef.current === 'recording') {
-                            createMediaRecorder();
-                            mediaRecorderRef.current?.start(100); // 100ms timeslice for periodic ondataavailable
-                        }
-                    } else {
-                        // User stopped recording - DON'T send final segment (it's mostly silence)
-                        if (timerRef.current) clearInterval(timerRef.current);
-                        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-                        setDuration(0);
-
-                        silenceStartRef.current = null;
-                        isSpeakingRef.current = false;
-                        maxVolumeRef.current = 0;
-
-                        console.log(`[Stop] User stopped. Discarding final segment: ${blob.size} bytes`);
-                        setStatus('idle');
-                    }
-                };
-
-                return recorder;
-            };
-
-            createMediaRecorder();
-            mediaRecorderRef.current?.start(100); // 100ms timeslice for periodic ondataavailable
-            setStatus('recording');
-            statusRef.current = 'recording'; // Manual sync for immediate loop check
-            setWordCount(null);
-            setDuration(0);
-
-            const startTime = Date.now();
-            timerRef.current = window.setInterval(() => {
-                setDuration(Math.floor((Date.now() - startTime) / 1000));
-            }, 100);
-
-        } catch (err) {
-            console.error(err);
-            setStatus('idle');
-        }
-    };
-
-    const stopRecording = () => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-            mediaRecorderRef.current.stop();
-        }
-    };
-
-    const processAudio = async (audioBlob: Blob, isSegment: boolean, sessionMaxVolume: number) => {
-        try {
-            // Filter out silence/noise segments to prevent hallucinations
-            // Even segments need some volume presence
-            if (sessionMaxVolume < 3.0) {
-                console.log('[Process] Skipped low volume segment:', sessionMaxVolume);
-                if (!isSegment) setStatus('idle');
-                return;
-            }
-
-            const arrayBuffer = await audioBlob.arrayBuffer();
-            const data = await window.electronAPI.transcribeAudio(arrayBuffer) as { text: string };
-            const text = data.text;
-
-            let cleanedText = text;
-
-            // Minimal cleanup (whisper-large-v3-turbo with vad_filter handles hallucinations well)
-            // 1. Remove CJK characters if accidentally transcribed
-            cleanedText = cleanedText.replace(/[\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\uFF00-\uFFEF\u4E00-\u9FAF]/g, '');
-
-            // 2. Remove repetitive word patterns (e.g., "the the the")
-            cleanedText = cleanedText.replace(/\b(\w+)( \1){2,}\b/gi, '$1');
-
-            cleanedText = cleanedText.trim();
-
-            if (cleanedText.length === 0) {
-                console.log('[Process] Filtered empty:', text);
-                if (!isSegment) setStatus('idle');
-                return;
-            }
-
-            if (typeof cleanedText === 'string') {
-                const count = cleanedText.split(/\s+/).length;
-
-                if (count > 0) {
-                    setWordCount(prev => (prev || 0) + count);
-                    setTranscript(prev => {
-                        const space = prev.length > 0 ? ' ' : '';
-                        return prev + space + cleanedText;
-                    });
-
-                    const deleteCount = hasPlaceholderRef.current ? 3 : 0;
-                    await window.electronAPI.pasteText(cleanedText + ' ', autoPasteRef.current, deleteCount);
-                    hasPlaceholderRef.current = false;
-                }
-            }
-            if (!isSegment) setStatus('idle');
-
-        } catch (error) {
-            console.error(error);
-            if (!isSegment) setStatus('error');
-            setTimeout(() => setStatus('idle'), 3000);
-        }
-    };
+    }, [handleToggle]);
 
     console.log('[App Render] Status:', status, 'Transcript Len:', transcript.length);
-
 
     return (
         <div className="min-h-screen bg-transparent flex items-center justify-center p-4">

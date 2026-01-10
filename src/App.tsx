@@ -365,7 +365,7 @@ export default function App() {
             }
 
             const arrayBuffer = await audioBlob.arrayBuffer();
-            const data = await window.electronAPI.transcribeAudio(arrayBuffer, false) as { text: string };
+            const data = await window.electronAPI.transcribeAudio(arrayBuffer) as { text: string };
             const text = data.text;
 
             let cleanedText = text;

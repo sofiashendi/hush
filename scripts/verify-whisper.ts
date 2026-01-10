@@ -1,19 +1,16 @@
-
 import path from 'path';
 import fs from 'fs';
-import ffmpeg from 'fluent-ffmpeg';
+import { spawn } from 'child_process';
 import ffmpegPath from 'ffmpeg-static';
 import os from 'os';
 import { Whisper } from 'smart-whisper';
 
-// Setup ffmpeg
-if (ffmpegPath) {
-    ffmpeg.setFfmpegPath(ffmpegPath);
-}
-
 // Models are now downloaded to user data directory, not bundled in resources
 const USER_DATA_PATH = path.join(os.homedir(), 'Library/Application Support/hush/models');
 const MODEL_PATH = path.join(USER_DATA_PATH, 'ggml-base-q5_1.bin');
+
+// Resolve ffmpeg path
+const resolvedFfmpegPath = ffmpegPath || 'ffmpeg';
 
 async function runTest() {
     console.log("=== HUSH BACKEND VERIFICATION (Float32 w/ Params) ===");
@@ -21,6 +18,7 @@ async function runTest() {
     // 1. Check Model
     if (!fs.existsSync(MODEL_PATH)) {
         console.error("FAIL: Model not found at", MODEL_PATH);
+        console.log("Please run the app first to download the model.");
         process.exit(1);
     }
 
@@ -34,20 +32,22 @@ async function runTest() {
         process.exit(1);
     }
 
-    // 3. Create Dummy Audio (WebM)
+    // 3. Create Dummy Audio (silent 2-second WebM)
     const tempInput = path.join(os.tmpdir(), `test-input-${Date.now()}.webm`);
     const tempPcm = path.join(os.tmpdir(), `test-output-${Date.now()}.pcm`);
 
     try {
         await new Promise<void>((resolve, reject) => {
-            ffmpeg()
-                .input('anullsrc')
-                .inputFormat('lavfi')
-                .duration(2)
-                .audioCodec('libvorbis')
-                .save(tempInput)
-                .on('end', () => resolve())
-                .on('error', reject);
+            const proc = spawn(resolvedFfmpegPath, [
+                '-f', 'lavfi',
+                '-i', 'anullsrc=r=44100:cl=mono',
+                '-t', '2',
+                '-c:a', 'libvorbis',
+                '-y',
+                tempInput
+            ]);
+            proc.on('close', (code) => code === 0 ? resolve() : reject(new Error(`ffmpeg exited with ${code}`)));
+            proc.on('error', reject);
         });
         console.log("PASS: Test audio created");
     } catch (e) {
@@ -59,13 +59,16 @@ async function runTest() {
     console.log("Converting to Raw Float32 PCM (16kHz, Mono)...");
     try {
         await new Promise<void>((resolve, reject) => {
-            ffmpeg(tempInput)
-                .toFormat('f32le')
-                .audioFrequency(16000)
-                .audioChannels(1)
-                .on('end', () => resolve())
-                .on('error', reject)
-                .save(tempPcm);
+            const proc = spawn(resolvedFfmpegPath, [
+                '-i', tempInput,
+                '-f', 'f32le',
+                '-ar', '16000',
+                '-ac', '1',
+                '-y',
+                tempPcm
+            ]);
+            proc.on('close', (code) => code === 0 ? resolve() : reject(new Error(`ffmpeg exited with ${code}`)));
+            proc.on('error', reject);
         });
         console.log(`PASS: Conversion successful. File: ${tempPcm}`);
     } catch (e) {

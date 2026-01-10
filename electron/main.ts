@@ -1,59 +1,11 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, clipboard, safeStorage, Tray, Menu, nativeImage } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, Tray, Menu, nativeImage } from 'electron';
 import path from 'path';
-import { spawn, exec } from 'child_process';
 import fs from 'fs';
-import ffmpegPathImport from 'ffmpeg-static';
-import os from 'os';
-import { randomBytes } from 'crypto';
-import { Whisper } from 'smart-whisper';
-import { modelManager, ModelType } from './models';
 
-// Type for Whisper transcription result segments
-interface WhisperSegment {
-    text: string;
-    start?: number;
-    end?: number;
-}
-
-// Resolve ffmpeg binary path
-// Note: ffmpeg-static path needs special handling in Electron dev/prod environments
-let resolvedFfmpegPath = ffmpegPathImport || 'ffmpeg';
-
-if (ffmpegPathImport) {
-    // In production (packaged), ffmpeg is in app.asar.unpacked
-    if (app.isPackaged) {
-        resolvedFfmpegPath = ffmpegPathImport.replace('app.asar', 'app.asar.unpacked');
-    } else {
-        // In Development, the bundled path might be wrong.
-        // We verify the existence and fall back to known locations.
-        if (!fs.existsSync(resolvedFfmpegPath)) {
-            console.warn(`[FFMPEG] Default path not found: ${resolvedFfmpegPath}. Searching alternatives...`);
-
-            // Use require.resolve to programmatically find the ffmpeg-static package
-            try {
-                const ffmpegStaticPkgPath = require.resolve('ffmpeg-static/package.json');
-                const ffmpegStaticDir = path.dirname(ffmpegStaticPkgPath);
-                const candidate = path.join(ffmpegStaticDir, 'ffmpeg');
-                if (fs.existsSync(candidate)) {
-                    console.log(`[FFMPEG] Found executable via require.resolve: ${candidate}`);
-                    resolvedFfmpegPath = candidate;
-                }
-            } catch (e) {
-                console.warn('[FFMPEG] require.resolve failed:', e);
-            }
-        }
-    }
-
-    if (fs.existsSync(resolvedFfmpegPath)) {
-        console.log('[FFMPEG] Path resolved to:', resolvedFfmpegPath);
-    } else {
-        console.error(`[FFMPEG] CRITICAL: Could not find ffmpeg binary! Falling back to system ffmpeg.`);
-        resolvedFfmpegPath = 'ffmpeg'; // System fallback
-    }
-}
-
-// Load environment variables from .env
-// (Removed: Config is loaded from config.json)
+// Import modular components
+import { loadConfig, saveConfig } from './lib/config';
+import { setupClipboardHandlers } from './lib/clipboard';
+import { initWhisper, cleanupTempFiles, setWhisperWindow } from './lib/whisper';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require('electron-squirrel-startup')) {
@@ -69,7 +21,6 @@ if (process.platform === 'darwin') {
 }
 
 const createWindow = () => {
-
     // Icon is set in package.json for build, but here for dev
     const iconPath = path.join(__dirname, '../public/icon.png');
 
@@ -93,12 +44,11 @@ const createWindow = () => {
         title: 'Hush',
         icon: iconPath,
         frame: false,
-        titleBarStyle: undefined, // Remove traffic lights
+        titleBarStyle: undefined,
         trafficLightPosition: undefined,
         transparent: true,
-        backgroundColor: '#00000000', // transparent hex
-        hasShadow: false, // Let React handle shadows
-        // vibrancy: 'under-window', // REMOVED: This causes the gray box
+        backgroundColor: '#00000000',
+        hasShadow: false,
         center: false,
         alwaysOnTop: false,
         webPreferences: {
@@ -108,20 +58,20 @@ const createWindow = () => {
             sandbox: false,
             backgroundThrottling: false,
         },
-        show: false, // Don't show until ready
+        show: false,
     });
 
-    const DEV_PORT = 34567; // Must match CONFIG.FRONTEND_PORT
+    // Setup module window references
+    setupClipboardHandlers(mainWindow);
+    setWhisperWindow(mainWindow);
+
+    const DEV_PORT = 34567;
 
     // In dev, always try to load the local vite server
     if (process.env.VITE_DEV_SERVER_URL) {
         console.log('Loading URL:', process.env.VITE_DEV_SERVER_URL);
         mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
     } else {
-        // Fallback or Production
-        // We will try to load from the dev port if we are in a dev-like environment but VITE_DEV_SERVER_URL isn't set
-        // But for standard vite-plugin-electron, VITE_DEV_SERVER_URL should be set.
-        // If not, we fall back to file.
         mainWindow.loadFile(path.join(__dirname, '../dist-react/index.html'));
     }
 
@@ -135,7 +85,6 @@ const createWindow = () => {
     // DEBUG: Log renderer errors
     mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
         console.error('Renderer failed to load:', errorCode, errorDescription);
-        // Fallback to reload after a delay if it's a connection refused (common if vite is slow to start)
         if (errorCode === -102) {
             setTimeout(() => {
                 console.log('Reloading window...');
@@ -150,14 +99,7 @@ const createWindow = () => {
 
     // Tray Setup
     const trayIconPath = path.join(__dirname, '../public/tray-icon.png');
-    // Resize to 22x22 for standard macOS menu bar size
     const trayIcon = nativeImage.createFromPath(trayIconPath).resize({ width: 22, height: 22 });
-    // setTemplateImage(true) makes it monochrome (black/white) adapting to system theme.
-    // If the user wants the colorful icon, we should set this to FALSE.
-    // The user said "Menu bar icon is still an ugly mic emoji".
-    // They provided a colored icon. Let's try FALSE first to show the user's icon as-is, or TRUE if they want it to blend.
-    // Given the "ios" icon is colorful, using it as a Template might look weird (just a black square).
-    // I will set it to FALSE to render the colored image, but resized.
     trayIcon.setTemplateImage(false);
 
     tray = new Tray(trayIcon);
@@ -169,17 +111,31 @@ const createWindow = () => {
     ]);
     tray.setToolTip('Hush');
     tray.setContextMenu(contextMenu);
-
-    // Initial Title (Empty)
     tray.setTitle('');
 };
 
+// Tray title handler
 ipcMain.handle('set-tray-title', (event, title) => {
     if (tray) {
         tray.setTitle(title);
     }
 });
 
+// Renderer log handler
+ipcMain.on('renderer-log', (event, message) => {
+    console.log('[RENDERER]', message);
+});
+
+// Config IPC handlers
+ipcMain.handle('get-config', () => {
+    return loadConfig();
+});
+
+ipcMain.handle('save-config', (event, newConfig) => {
+    return saveConfig(newConfig);
+});
+
+// App lifecycle
 app.whenReady().then(() => {
     // Explicitly show dock to prevent SetApplicationIsDaemon errors
     if (process.platform === 'darwin') {
@@ -188,7 +144,7 @@ app.whenReady().then(() => {
 
     createWindow();
 
-    // Register a 'Command+\'' (Single Quote) shortcut listener.
+    // Register global shortcut
     console.log("Registering global shortcut: Command+'");
     const ret = globalShortcut.register("Command+'", () => {
         console.log('Global shortcut triggered!');
@@ -196,7 +152,6 @@ app.whenReady().then(() => {
             if (!mainWindow.isVisible()) {
                 console.log('Showing window');
                 mainWindow.show();
-                // Focus webcontents to ensure shortcuts/input work
                 mainWindow.webContents.focus();
             }
             console.log('Sending toggle-recording event');
@@ -219,6 +174,12 @@ app.whenReady().then(() => {
     });
 });
 
+// Initialize whisper and cleanup on ready
+app.whenReady().then(() => {
+    cleanupTempFiles();
+    initWhisper();
+});
+
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         app.quit();
@@ -227,400 +188,4 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
     globalShortcut.unregisterAll();
-});
-
-
-// IPC Handler to paste text
-ipcMain.on('renderer-log', (event, message) => {
-    console.log('[RENDERER]', message);
-});
-
-ipcMain.handle('type-placeholder', async () => {
-    // Determine the active window's bundle identifier or just use System Events globally
-    // We simply type three periods. Typing is safer than pasting for this tiny string
-    // as it doesn't overwrite the clipboard.
-    const script = `tell application "System Events" to keystroke "..."`;
-
-    // Slight delay to allow window to hide/focus switch if necessary (though usually called after flush)
-    exec(`osascript -e '${script}'`, (err) => {
-        if (err) console.error('Placeholder error:', err);
-    });
-});
-
-ipcMain.handle('remove-placeholder', async () => {
-    // Just delete 3 characters (using backspace)
-    // key code 51 is DELETE (Backspace)
-    const script = `tell application "System Events"
-        repeat 3 times
-        key code 51
-        end repeat
-    end tell`;
-
-    exec(`osascript -e '${script}'`, (err) => {
-        if (err) console.error('Remove placeholder error:', err);
-    });
-});
-
-ipcMain.handle('paste-text', async (event, text, autoPaste = false, deleteCount = 0) => {
-    console.log('Copying text to clipboard:', text);
-    clipboard.writeText(text);
-
-    if (autoPaste) {
-
-        if (!mainWindow || !mainWindow.isFocused()) {
-            // User is focused elsewhere (Word, Notes, Antigravity, etc.).
-            // Proceed to Smart Role Check.
-
-            const checkEditableScript = `tell application "System Events"
-                set frontApp to name of first application process whose frontmost is true
-                try
-                    tell process frontApp
-                        set focusedElement to value of attribute "AXFocusedUIElement"
-                        set elRole to value of attribute "AXRole" of focusedElement
-                        return elRole
-                    end tell
-                on error
-                    return "Unknown"
-                end try
-            end tell`;
-
-            exec(`osascript -e '${checkEditableScript}'`, (checkErr, checkStdout) => {
-                const role = checkStdout?.trim();
-                console.log(`[Smart Paste] Focused Role: ${role}`);
-
-                const editableRoles = ['AXTextField', 'AXTextArea', 'AXWebArea', 'AXRichTextView', 'AXgroup'];
-                // Not Pasting fix for unknowns:
-                const extendedRoles = [...editableRoles, 'Unknown'];
-
-                if (extendedRoles.includes(role)) {
-                    console.log(`[Smart Paste] Pasting into ${role}...`);
-                    // We DO NOT need to hide window here because we are NOT focused (mainWindow.isFocused() check passed).
-                    // So we can just paste immediately!
-
-                    const script = `tell application "System Events" to keystroke "v" using command down`;
-                    exec(`osascript -e '${script}'`, (error) => {
-                        if (error) console.error('Auto-paste exec error:', error);
-                    });
-                } else {
-                    console.log(`[Smart Paste] Skipped pasting for role: ${role}. Text is in clipboard.`);
-                }
-            });
-
-        } else {
-            // Hush IS focused.
-            // Correct Behavior: Just Copy to Clipboard. Stay Visible.
-            console.log('[Smart Paste] Hush is focused. Copied to Clipboard. NOT Pasting/Hiding.');
-        }
-    }
-});
-
-ipcMain.handle('hide-window', () => {
-    if (mainWindow) mainWindow.hide();
-});
-
-// Config Storage Logic
-const getConfigPath = () => {
-    return path.join(app.getPath('userData'), 'config.json');
-};
-
-const loadConfig = () => {
-    try {
-        const configPath = getConfigPath();
-        if (fs.existsSync(configPath)) {
-            const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-
-            // Decryption / Migration
-            if (config.apiKey) {
-                if (config.isEncrypted) {
-                    // Try to decrypt
-                    if (safeStorage.isEncryptionAvailable()) {
-                        try {
-                            const encryptedBuffer = Buffer.from(config.apiKey, 'hex');
-                            config.apiKey = safeStorage.decryptString(encryptedBuffer);
-                        } catch (e) {
-                            console.error('Failed to decrypt API key:', e);
-                            config.apiKey = ''; // Reset if decryption fails
-                        }
-                    } else {
-                        console.warn('safeStorage not available, cannot decrypt key');
-                    }
-                } else {
-                    // AUTO-MIGRATE: Detected plain text key.
-                    console.log('Migrating plain-text key to encrypted storage...');
-                    // Re-save immediately. saveConfig() will handle the encryption.
-                    saveConfig(config);
-                }
-            }
-            return config;
-        }
-    } catch (error) {
-        console.error('Error loading config:', error);
-    }
-    return {};
-};
-
-const saveConfig = (newConfig: any) => {
-    try {
-        const configPath = getConfigPath();
-
-        // Clone to avoid mutating the in-memory object with the encrypted string
-        const storageConfig = { ...newConfig };
-
-        if (storageConfig.apiKey && safeStorage.isEncryptionAvailable()) {
-            const buffer = safeStorage.encryptString(storageConfig.apiKey);
-            storageConfig.apiKey = buffer.toString('hex');
-            storageConfig.isEncrypted = true;
-        }
-
-        fs.writeFileSync(configPath, JSON.stringify(storageConfig, null, 2));
-        return true;
-    } catch (error) {
-        console.error('Error saving config:', error);
-        return false;
-    }
-};
-
-// IPC Handlers for Settings
-ipcMain.handle('get-config', () => {
-    return loadConfig();
-});
-
-ipcMain.handle('save-config', (event, newConfig) => {
-    return saveConfig(newConfig);
-});
-
-let whisperInstance: Whisper | null = null;
-
-// Initialize with Base model by default
-const initWhisper = async () => {
-    try {
-        const config = loadConfig();
-        const modelType = (config.model || 'base') as ModelType;
-        console.log(`[Whisper] Loading model preference: ${modelType}`);
-
-        let modelPath = modelManager.getModelPath(modelType);
-
-        // If preferred model not found, try to download it
-        if (!modelPath) {
-            console.log(`[Whisper] Model ${modelType} not found. Downloading...`);
-            try {
-                modelPath = await modelManager.downloadModel(modelType, (percent) => {
-                    console.log(`[Whisper] Download progress: ${percent}%`);
-                    // Send to renderer if window exists
-                    if (mainWindow) {
-                        mainWindow.webContents.send('download-progress', percent);
-                    }
-                });
-                console.log(`[Whisper] Download complete: ${modelPath}`);
-            } catch (downloadErr) {
-                console.error(`[Whisper] Failed to download model:`, downloadErr);
-                if (mainWindow) {
-                    mainWindow.webContents.send('model-error', 'Failed to download AI model. Check your internet connection and try again.');
-                }
-                return;
-            }
-        }
-
-        if (modelPath) {
-            console.log(`[Whisper] Initializing with model: ${modelPath}`);
-            // Free previous instance if exists
-            if (whisperInstance) {
-                await whisperInstance.free();
-            }
-            whisperInstance = new Whisper(modelPath, { gpu: true });
-            console.log('[Whisper] Ready.');
-
-            // Notify renderer that model is ready
-            if (mainWindow) {
-                mainWindow.webContents.send('model-ready');
-            }
-        } else {
-            console.error('[Whisper] Model not found and download failed!');
-            if (mainWindow) {
-                mainWindow.webContents.send('model-error', 'Model not found. Please restart the app.');
-            }
-        }
-    } catch (err) {
-        console.error('[Whisper] Initialization failed:', err);
-        if (mainWindow) {
-            mainWindow.webContents.send('model-error', 'Failed to initialize transcription engine.');
-        }
-    }
-};
-
-// IPC handler to check if model is ready
-ipcMain.handle('is-model-ready', () => {
-    return whisperInstance !== null;
-});
-
-// Initial init
-const cleanupTempFiles = async () => {
-    try {
-        const tmpDir = os.tmpdir();
-        const files = await fs.promises.readdir(tmpDir);
-        const hushFiles = files.filter(
-            file => file.startsWith('hush-input-') || file.startsWith('hush-output-')
-        );
-
-        if (hushFiles.length === 0) return;
-
-        const results = await Promise.allSettled(
-            hushFiles.map(file => fs.promises.unlink(path.join(tmpDir, file)))
-        );
-
-        const count = results.filter(r => r.status === 'fulfilled').length;
-        if (count > 0) console.log(`[Cleanup] Removed ${count} temporary files.`);
-    } catch (err) {
-        console.error('[Cleanup] Failed to clean temp files:', err);
-    }
-};
-
-app.whenReady().then(() => {
-    cleanupTempFiles();
-    initWhisper();
-});
-
-ipcMain.handle('switch-model', async (event, modelType: ModelType) => {
-    // 1. Check if model exists
-    let modelPath = modelManager.getModelPath(modelType);
-
-    if (!modelPath) {
-        console.log(`[Whisper] Model ${modelType} not found. Downloading...`);
-        // Notify renderer that download started (0%)
-        event.sender.send('download-progress', 0);
-
-        try {
-            modelPath = await modelManager.downloadModel(modelType, (percent) => {
-                event.sender.send('download-progress', percent);
-            });
-            console.log(`[Whisper] Download complete: ${modelPath}`);
-            event.sender.send('download-progress', 100); // Ensure 100% is sent
-        } catch (error) {
-            console.error(`[Whisper] Download failed:`, error);
-            throw error;
-        }
-    }
-
-    console.log(`[Whisper] Switching to ${modelType}...`);
-
-    // Create new instance
-    try {
-        // Free old instance
-        if (whisperInstance) {
-            await whisperInstance.free();
-            whisperInstance = null; // Safety clear
-        }
-
-        // Small delay to ensure memory is freed? Not usually needed but good practice.
-        // await new Promise(r => setTimeout(r, 100));
-
-        whisperInstance = new Whisper(modelPath, { gpu: true });
-        console.log(`[Whisper] Switched to ${modelType}`);
-
-        // Persist choice to config
-        const config = loadConfig();
-        config.model = modelType;
-        saveConfig(config);
-
-        return true;
-    } catch (error) {
-        console.error(`[Whisper] Failed to switch model:`, error);
-        throw error;
-    }
-});
-
-ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
-    console.log(`[Whisper] Transcribing ${audioBuffer.byteLength} bytes...`);
-
-    if (!whisperInstance) {
-        console.warn('[Whisper] Instance not ready, attempting re-init...');
-        await initWhisper();
-        if (!whisperInstance) {
-            throw new Error("Transcription engine could not be initialized. Please check logs for details.");
-        }
-    }
-
-    // Create temp files for conversion (use timestamp + random to prevent collisions)
-    const uniqueId = `${Date.now()}-${randomBytes(4).toString('hex')}`;
-    const tempInput = path.join(os.tmpdir(), `hush-input-${uniqueId}.webm`);
-    const tempPcm = path.join(os.tmpdir(), `hush-output-${uniqueId}.pcm`);
-
-    // Helper to cleanup temp files (async to avoid blocking main process)
-    const cleanupTranscriptionFiles = async () => {
-        try {
-            await Promise.allSettled([
-                fs.promises.rm(tempInput, { force: true }),
-                fs.promises.rm(tempPcm, { force: true })
-            ]);
-        } catch (e) {
-            console.error("Temp cleanup error:", e);
-        }
-    };
-
-    try {
-        // Write input buffer to temp file
-        // Note: buffer coming from ipc is usually Uint8Array or Buffer
-        await fs.promises.writeFile(tempInput, Buffer.from(audioBuffer));
-
-        // Convert to 16kHz mono raw float32 PCM using ffmpeg
-        await new Promise<void>((resolve, reject) => {
-            const ffmpegProcess = spawn(resolvedFfmpegPath, [
-                '-i', tempInput,
-                '-f', 'f32le',      // Output format: 32-bit float little-endian
-                '-ar', '16000',     // Sample rate: 16kHz (required by Whisper)
-                '-ac', '1',         // Channels: mono
-                '-y',               // Overwrite output file
-                tempPcm
-            ]);
-
-            ffmpegProcess.on('close', (code) => {
-                if (code === 0) {
-                    resolve();
-                } else {
-                    reject(new Error(`ffmpeg exited with code ${code}`));
-                }
-            });
-
-            ffmpegProcess.on('error', (err) => reject(err));
-        });
-
-        // Read raw PCM file
-        const pcmBuffer = await fs.promises.readFile(tempPcm);
-        const float32Data = new Float32Array(pcmBuffer.buffer, pcmBuffer.byteOffset, pcmBuffer.length / 4);
-
-        console.log(`[Whisper] PCM converted. Samples: ${float32Data.length}`);
-
-        // Transcribe the PCM data
-        const task = await whisperInstance.transcribe(float32Data, { language: 'auto' });
-        const result = await task.result;
-
-        let text = "";
-        if (Array.isArray(result)) {
-            text = (result as WhisperSegment[]).map(r => r.text).join(" ").trim();
-        } else {
-            text = (result as WhisperSegment).text?.trim() || "";
-        }
-
-        console.log(`[Whisper] Result: "${text}"`);
-
-        const HALLUCINATION_PATTERNS = [
-            /^\s*\.+\s*$/,                          // Only periods/whitespace
-            /^[\u3000-\u9FAF\uFF00-\uFFEF\s]+$/,    // Only CJK/fullwidth chars
-            /\[.*\]/,                               // Filters out [MUSIC], [APPLAUSE], etc.
-            /^\s*Connect specific.*\s*$/            // Common Whisper hallucination
-        ];
-
-        if (HALLUCINATION_PATTERNS.some(p => p.test(text))) {
-            console.log('[Whisper] Filtered hallucination');
-            return { text: "" };
-        }
-
-        return { text };
-    } catch (error) {
-        console.error('[Whisper] Transcription error:', error);
-        throw error;
-    } finally {
-        // Always cleanup temp files
-        await cleanupTranscriptionFiles();
-    }
 });

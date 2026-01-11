@@ -59,18 +59,9 @@ if (ffmpegPathImport) {
             resolvedFfmpegPath = unpackedPath;
             console.log(`[FFMPEG] Found at unpacked path: ${resolvedFfmpegPath}`);
         } else {
-            // Try alternative: look in the resources directory
-            const resourcePath = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', 'ffmpeg');
-            console.log(`[FFMPEG] Unpacked path not found, trying resources: ${resourcePath}`);
-            if (fs.existsSync(resourcePath)) {
-                resolvedFfmpegPath = resourcePath;
-                console.log(`[FFMPEG] Found at resources path: ${resolvedFfmpegPath}`);
-            } else {
-                console.error(`[FFMPEG] CRITICAL: Could not find ffmpeg binary in packaged app!`);
-                console.error(`[FFMPEG] Tried: ${unpackedPath}`);
-                console.error(`[FFMPEG] Tried: ${resourcePath}`);
-                resolvedFfmpegPath = 'ffmpeg'; // System fallback (unlikely to work in sandboxed app)
-            }
+            console.error(`[FFMPEG] CRITICAL: Could not find ffmpeg binary in packaged app!`);
+            console.error(`[FFMPEG] Tried: ${unpackedPath}`);
+            resolvedFfmpegPath = 'ffmpeg'; // System fallback (unlikely to work in sandboxed app)
         }
     } else {
         // In Development, the bundled path might be wrong.

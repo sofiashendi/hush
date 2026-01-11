@@ -5,6 +5,50 @@ import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 import { app, ipcMain, BrowserWindow } from 'electron';
 import ffmpegPathImport from 'ffmpeg-static';
+
+// Fix Metal shader path for packaged app BEFORE importing smart-whisper
+// The GGML_METAL_PATH_RESOURCES environment variable tells whisper.cpp where to find ggml-metal.metal
+if (app.isPackaged) {
+    try {
+        // Resolve path to smart-whisper to avoid hardcoding directory structure
+        const smartWhisperPackageJsonPath = require.resolve('smart-whisper/package.json');
+        const smartWhisperDirInAsar = path.dirname(smartWhisperPackageJsonPath);
+        const smartWhisperDirUnpacked = smartWhisperDirInAsar.replace('app.asar', 'app.asar.unpacked');
+
+        // Search for ggml-metal.metal file recursively (max depth 5 to avoid deep recursion)
+        const findMetalShader = (dir: string, depth = 0): string | null => {
+            if (depth > 5) return null;
+            try {
+                const entries = fs.readdirSync(dir, { withFileTypes: true });
+                for (const entry of entries) {
+                    const fullPath = path.join(dir, entry.name);
+                    if (entry.isFile() && entry.name === 'ggml-metal.metal') {
+                        return dir; // Return the directory containing the shader
+                    }
+                    if (entry.isDirectory() && !entry.name.startsWith('.')) {
+                        const found = findMetalShader(fullPath, depth + 1);
+                        if (found) return found;
+                    }
+                }
+            } catch {
+                // Ignore permission errors
+            }
+            return null;
+        };
+
+        const metalShaderPath = findMetalShader(smartWhisperDirUnpacked);
+
+        if (metalShaderPath) {
+            process.env.GGML_METAL_PATH_RESOURCES = metalShaderPath;
+            console.log('[Metal] Set shader path:', metalShaderPath);
+        } else {
+            console.warn('[Metal] Shader file not found in:', smartWhisperDirUnpacked);
+        }
+    } catch (e) {
+        console.warn('[Metal] Could not resolve smart-whisper path for Metal shader.', e);
+    }
+}
+
 import { Whisper } from 'smart-whisper';
 import { modelManager, ModelType } from './models';
 import { loadConfig, saveConfig } from './config';
@@ -21,9 +65,20 @@ interface WhisperSegment {
 let resolvedFfmpegPath = ffmpegPathImport || 'ffmpeg';
 
 if (ffmpegPathImport) {
-    // In production (packaged), ffmpeg is in app.asar.unpacked
     if (app.isPackaged) {
-        resolvedFfmpegPath = ffmpegPathImport.replace('app.asar', 'app.asar.unpacked');
+        // In production (packaged), ffmpeg is in app.asar.unpacked
+        const unpackedPath = ffmpegPathImport.replace('app.asar', 'app.asar.unpacked');
+        console.log(`[FFMPEG] Packaged mode. Original path: ${ffmpegPathImport}`);
+        console.log(`[FFMPEG] Trying unpacked path: ${unpackedPath}`);
+
+        if (fs.existsSync(unpackedPath)) {
+            resolvedFfmpegPath = unpackedPath;
+            console.log(`[FFMPEG] Found at unpacked path: ${resolvedFfmpegPath}`);
+        } else {
+            console.error(`[FFMPEG] CRITICAL: Could not find ffmpeg binary in packaged app!`);
+            console.error(`[FFMPEG] Tried: ${unpackedPath}`);
+            resolvedFfmpegPath = 'ffmpeg'; // System fallback (unlikely to work in sandboxed app)
+        }
     } else {
         // In Development, the bundled path might be wrong.
         // We verify the existence and fall back to known locations.

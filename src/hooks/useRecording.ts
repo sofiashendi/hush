@@ -272,16 +272,27 @@ export function useRecording({ isModelReadyRef, autoPasteRef, showSettings }: Us
                             mediaRecorderRef.current?.start(100);
                         }
                     } else {
+                        // User manually stopped - transcribe any remaining audio
                         if (timerRef.current) clearInterval(timerRef.current);
                         if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
                         setDuration(0);
 
                         silenceStartRef.current = null;
                         isSpeakingRef.current = false;
-                        maxVolumeRef.current = 0;
 
-                        console.log(`[Stop] User stopped. Discarding final segment: ${blob.size} bytes`);
-                        setStatus('idle');
+                        console.log(`[Stop] User stopped. Processing final segment: ${blob.size} bytes`);
+
+                        if (blob.size > 0) {
+                            // Process the final segment - set status to processing while we wait
+                            setStatus('processing');
+                            transcriptionQueueRef.current = transcriptionQueueRef.current.then(async () => {
+                                await processAudio(blob, false, sessionMaxVolume);
+                            });
+                        } else {
+                            setStatus('idle');
+                        }
+
+                        maxVolumeRef.current = 0;
                     }
                 };
 

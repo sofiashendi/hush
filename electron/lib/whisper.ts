@@ -15,18 +15,34 @@ if (app.isPackaged) {
         const smartWhisperDirInAsar = path.dirname(smartWhisperPackageJsonPath);
         const smartWhisperDirUnpacked = smartWhisperDirInAsar.replace('app.asar', 'app.asar.unpacked');
 
-        const metalShaderPath = path.join(
-            smartWhisperDirUnpacked,
-            'whisper.cpp',
-            'ggml',
-            'src'
-        );
+        // Search for ggml-metal.metal file recursively (max depth 5 to avoid deep recursion)
+        const findMetalShader = (dir: string, depth = 0): string | null => {
+            if (depth > 5) return null;
+            try {
+                const entries = fs.readdirSync(dir, { withFileTypes: true });
+                for (const entry of entries) {
+                    const fullPath = path.join(dir, entry.name);
+                    if (entry.isFile() && entry.name === 'ggml-metal.metal') {
+                        return dir; // Return the directory containing the shader
+                    }
+                    if (entry.isDirectory() && !entry.name.startsWith('.')) {
+                        const found = findMetalShader(fullPath, depth + 1);
+                        if (found) return found;
+                    }
+                }
+            } catch {
+                // Ignore permission errors
+            }
+            return null;
+        };
 
-        if (fs.existsSync(path.join(metalShaderPath, 'ggml-metal.metal'))) {
+        const metalShaderPath = findMetalShader(smartWhisperDirUnpacked);
+
+        if (metalShaderPath) {
             process.env.GGML_METAL_PATH_RESOURCES = metalShaderPath;
             console.log('[Metal] Set shader path:', metalShaderPath);
         } else {
-            console.warn('[Metal] Shader file not found at:', metalShaderPath);
+            console.warn('[Metal] Shader file not found in:', smartWhisperDirUnpacked);
         }
     } catch (e) {
         console.warn('[Metal] Could not resolve smart-whisper path for Metal shader.', e);

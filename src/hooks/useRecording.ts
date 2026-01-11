@@ -287,8 +287,6 @@ export function useRecording({ isModelReadyRef, autoPasteRef, showSettings }: Us
                             setStatus('processing');
                             transcriptionQueueRef.current = transcriptionQueueRef.current.then(async () => {
                                 await processAudio(blob, false, sessionMaxVolume);
-                            }).catch(() => {
-                                setStatus('idle');
                             });
                         } else {
                             setStatus('idle');

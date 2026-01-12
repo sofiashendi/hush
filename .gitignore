@@ -96,6 +96,7 @@ dist
 dist-electron
 dist-react
 release
+docs/plans
 
 # Models - downloaded at runtime
 resources/*.bin

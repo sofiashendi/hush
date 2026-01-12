@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('Config');
 
 interface Config {
   autoPaste: boolean;
@@ -23,7 +26,7 @@ export function useConfig(): Config {
       const config = await window.electronAPI.getConfig();
       if (config.autoPaste !== undefined) setAutoPaste(config.autoPaste);
     } catch (e) {
-      console.error('Config load error', e);
+      log.error('Config load error', { error: e });
     }
   };
 

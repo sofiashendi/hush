@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('ModelStatus');
 
 interface ModelStatus {
   isModelReady: boolean;
@@ -25,7 +28,7 @@ export function useModelStatus(): ModelStatus {
   useEffect(() => {
     // Listen for model ready event
     const removeModelReadyListener = window.electronAPI.onModelReady(() => {
-      console.log('[useModelStatus] Model ready!');
+      log.info('Model ready');
       setIsModelReady(true);
       setModelDownloadProgress(-1);
       setModelError(null);
@@ -33,14 +36,14 @@ export function useModelStatus(): ModelStatus {
 
     // Listen for model error event
     const removeModelErrorListener = window.electronAPI.onModelError((message) => {
-      console.error('[useModelStatus] Model error:', message);
+      log.error('Model error', { message });
       setModelError(message);
       setModelDownloadProgress(-1);
     });
 
     // Listen for download progress
     const removeDownloadListener = window.electronAPI.onDownloadProgress((percent) => {
-      console.log(`[useModelStatus] Download progress: ${percent}%`);
+      log.debug('Download progress', { percent });
       setModelDownloadProgress(percent);
     });
 

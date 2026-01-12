@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { X } from 'lucide-react';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('Settings');
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -20,7 +23,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         setModel(config.model || 'base');
         setAutoPaste(config.autoPaste ?? false);
       } catch (err) {
-        console.error('Failed to load settings:', err);
+        log.error('Failed to load settings', { error: err });
       }
     };
     load();
@@ -34,7 +37,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       });
       onClose();
     } catch (err) {
-      console.error('[Settings] Failed to save settings:', err);
+      log.error('Failed to save settings', { error: err });
     }
   };
 
@@ -55,7 +58,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       await window.electronAPI.switchModel(newModel);
       setModel(newModel);
     } catch (err) {
-      console.error('Failed to switch model:', err);
+      log.error('Failed to switch model', { error: err });
       setModelError(
         'Failed to switch model. The model may still be loading or there was an error.'
       );

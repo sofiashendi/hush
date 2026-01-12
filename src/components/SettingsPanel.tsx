@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { X } from 'lucide-react';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('Settings');
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -20,7 +23,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         setModel(config.model || 'base');
         setAutoPaste(config.autoPaste ?? false);
       } catch (err) {
-        console.error("Failed to load settings:", err);
+        log.error('Failed to load settings', { error: err });
       }
     };
     load();
@@ -30,11 +33,11 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     try {
       await window.electronAPI.saveConfig({
         model: model,
-        autoPaste: autoPaste
+        autoPaste: autoPaste,
       });
       onClose();
     } catch (err) {
-      console.error("[Settings] Failed to save settings:", err);
+      log.error('Failed to save settings', { error: err });
     }
   };
 
@@ -55,8 +58,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       await window.electronAPI.switchModel(newModel);
       setModel(newModel);
     } catch (err) {
-      console.error("Failed to switch model:", err);
-      setModelError("Failed to switch model. The model may still be loading or there was an error.");
+      log.error('Failed to switch model', { error: err });
+      setModelError(
+        'Failed to switch model. The model may still be loading or there was an error.'
+      );
     } finally {
       setIsDownloading(false);
       setDownloadProgress(0);
@@ -66,7 +71,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const models = [
     { id: 'base', label: 'Base', sublabel: 'Fast & Lightweight', size: '~60MB' },
     { id: 'small', label: 'Small', sublabel: 'Balanced', size: '~190MB' },
-    { id: 'large-v3-turbo', label: 'Large', sublabel: 'Max Accuracy', size: '~550MB' }
+    { id: 'large-v3-turbo', label: 'Large', sublabel: 'Max Accuracy', size: '~550MB' },
   ];
 
   return (
@@ -98,7 +103,11 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             </label>
             {isDownloading && (
               <span style={{ fontSize: '12px', color: '#60a5fa', fontWeight: 500 }}>
-                {downloadProgress < 0 ? 'Switching...' : downloadProgress < 100 ? `Downloading ${downloadProgress}%` : 'Finalizing...'}
+                {downloadProgress < 0
+                  ? 'Switching...'
+                  : downloadProgress < 100
+                    ? `Downloading ${downloadProgress}%`
+                    : 'Finalizing...'}
               </span>
             )}
           </div>
@@ -116,18 +125,33 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     padding: '16px',
                     borderRadius: '12px',
                     border: isSelected ? '2px solid #3b82f6' : '2px solid rgba(255,255,255,0.1)',
-                    backgroundColor: isSelected ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.05)',
+                    backgroundColor: isSelected
+                      ? 'rgba(59,130,246,0.15)'
+                      : 'rgba(255,255,255,0.05)',
                     cursor: isDownloading ? 'not-allowed' : 'pointer',
                     opacity: isDownloading ? 0.5 : 1,
                   }}
                 >
-                  <div className="flex justify-between items-center" style={{ marginBottom: '4px' }}>
-                    <span style={{ fontWeight: 600, fontSize: '15px', color: isSelected ? '#fff' : 'rgba(255,255,255,0.8)' }}>
+                  <div
+                    className="flex justify-between items-center"
+                    style={{ marginBottom: '4px' }}
+                  >
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        fontSize: '15px',
+                        color: isSelected ? '#fff' : 'rgba(255,255,255,0.8)',
+                      }}
+                    >
                       {m.label}
                     </span>
-                    <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>{m.size}</span>
+                    <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>
+                      {m.size}
+                    </span>
                   </div>
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{m.sublabel}</span>
+                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+                    {m.sublabel}
+                  </span>
                 </button>
               );
             })}
@@ -135,40 +159,59 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
           {/* Progress Bar */}
           {isDownloading && (
-            <div className="relative w-full overflow-hidden" style={{ height: '6px', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: '3px', marginTop: '16px' }}>
+            <div
+              className="relative w-full overflow-hidden"
+              style={{
+                height: '6px',
+                backgroundColor: 'rgba(0,0,0,0.3)',
+                borderRadius: '3px',
+                marginTop: '16px',
+              }}
+            >
               <motion.div
                 className="absolute h-full"
                 style={{ background: 'linear-gradient(to right, #3b82f6, #60a5fa)' }}
                 initial={{ width: 0 }}
                 animate={{ width: `${downloadProgress}%` }}
-                transition={{ ease: "easeOut" }}
+                transition={{ ease: 'easeOut' }}
               />
             </div>
           )}
 
           {/* Error Message */}
           {modelError && (
-            <div style={{
-              marginTop: '16px',
-              padding: '12px 16px',
-              borderRadius: '8px',
-              backgroundColor: 'rgba(239, 68, 68, 0.15)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-              color: '#fca5a5',
-              fontSize: '14px',
-            }}>
+            <div
+              style={{
+                marginTop: '16px',
+                padding: '12px 16px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                color: '#fca5a5',
+                fontSize: '14px',
+              }}
+            >
               {modelError}
             </div>
           )}
         </div>
 
         {/* Divider */}
-        <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.1)', marginBottom: '24px' }} />
+        <div
+          style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.1)', marginBottom: '24px' }}
+        />
 
         {/* Auto-paste toggle */}
         <div className="flex items-center justify-between">
           <div>
-            <h3 style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 500, fontSize: '16px', marginBottom: '4px' }}>
+            <h3
+              style={{
+                color: 'rgba(255,255,255,0.9)',
+                fontWeight: 500,
+                fontSize: '16px',
+                marginBottom: '4px',
+              }}
+            >
               Auto-Paste Text
             </h3>
             <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px', maxWidth: '320px' }}>
@@ -207,11 +250,14 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       </div>
 
       {/* Footer */}
-      <div className="flex justify-end gap-3" style={{
-        padding: '16px 24px',
-        borderTop: '1px solid rgba(255,255,255,0.1)',
-        backgroundColor: 'rgba(255,255,255,0.03)',
-      }}>
+      <div
+        className="flex justify-end gap-3"
+        style={{
+          padding: '16px 24px',
+          borderTop: '1px solid rgba(255,255,255,0.1)',
+          backgroundColor: 'rgba(255,255,255,0.03)',
+        }}
+      >
         <button
           onClick={onClose}
           style={{

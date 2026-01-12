@@ -1,35 +1,64 @@
-# Engineering Guide (AGENTS.md)
+This file provides guidance to agents when working with code in this repository.
 
-This document provides technical context for AI Agents working on this codebase. It complements the `README.md` by focusing on architecture and internals.
+## Build Commands
+
+```bash
+npm run dev      # Development with hot reload (kills port 34567, runs Vite + Electron)
+npm run build    # Build React to dist-react/ and Electron to dist-electron/
+npm run dist     # Build + package as macOS DMG (output in dist/)
+```
 
 ## Architecture
-The application follows a **Client-Serverless** model:
 
-1.  **Renderer (React/Vite)**:
-    -   Handles UI state (`idle`, `recording`, `processing`).
-    -   Captures audio via `MediaRecorder` API with 100ms timeslice.
-    -   Implements Voice Activity Detection (VAD) for continuous dictation.
-    -   Communicates with Main Process via `window.electronAPI`.
-2.  **Main Process (Electron)**:
-    -   Manages the `BrowserWindow` (transparent, native controls).
-    -   Registers global shortcuts (`Command+'`).
-    -   **Proxy**: Acts as a secure proxy for API requests to avoid CORS issues in the renderer.
-    -   **Clipboard**: Writes text to system clipboard.
-3.  **Backend (Cloudflare Worker)**:
-    -   **Type**: Cloudflare Worker (Edge Compute).
-    -   **Hosted at**: `https://listen.sofia-shendi.workers.dev` (or your deployment).
-    -   **Input**: Accepts `POST` requests with `application/octet-stream` (Raw Audio).
-    -   **Authentication**: Authenticates via `Authorization` header against `WORKER_API_KEY`.
-    -   **AI Model**: `@cf/openai/whisper-large-v3-turbo` - Fast, accurate speech-to-text (~$0.0005/min).
-    -   **Features**: Uses `vad_filter` and `initial_prompt` for reduced hallucinations.
-    -   **Security**: Audio is streamed directly to Cloudflare; no intermediate storage. Keys stored locally.
+Hush is a macOS Electron app for local speech-to-text using whisper.cpp. Audio never leaves the device.
 
-## Key Files
--   `electron/main.ts`: Entry point. Handles window creation, IPC handlers (`transcribe-audio`, `paste-text`), and global shortcuts.
--   `src/App.tsx`: Main UI logic. Handles audio recording stream and state management.
--   `src/index.css`: Critical for the "Transparent Widget" look. Uses `backdrop-filter` and `-webkit-app-region: drag`.
+### Process Architecture
+
+**Main Process** (`electron/main.ts`):
+- Window management (transparent, frameless, always-on-top optional)
+- Global shortcut registration (`Cmd + '`)
+- System tray with context menu
+- IPC bridge to renderer
+
+**Renderer** (`src/`):
+- React 19 with Vite, Motion for animations
+- Captures audio via MediaRecorder API (100ms timeslice)
+- Voice Activity Detection (VAD) for continuous dictation
+- Communicates via `window.electronAPI` (exposed through preload)
+
+**Electron Lib** (`electron/lib/`):
+- `whisper.ts`: Whisper.cpp integration via smart-whisper, model download/switching, ffmpeg conversion
+- `clipboard.ts`: Clipboard write and auto-paste via AppleScript
+- `models.ts`: Model management (base, small, large-turbo)
+- `config.ts`: User config persistence
+
+### Data Flow
+
+1. User triggers recording (click or `Cmd + '`)
+2. Renderer captures audio chunks, runs VAD to detect speech pauses
+3. On pause detection or manual stop, audio blob sent to main process via IPC
+4. Main process converts webm → PCM (ffmpeg), transcribes with whisper.cpp
+5. Result filtered for hallucinations, returned to renderer
+6. Text pasted to clipboard and optionally auto-typed into active app
+
+### Key Hooks
+
+- `useRecording`: Core recording/VAD/transcription logic
+- `useModelStatus`: Tracks whisper model loading/download progress
+- `useConfig`: User preferences (auto-paste toggle, model selection)
 
 ## Development Notes
--   **Ports**: Vite runs on **34567**.
--   **Security**: API Key is loaded from `config.json` (encrypted via Electron's `safeStorage`) in Main Process. content-security-policy is strict in `index.html`.
--   **Windowing**: The window is configured with `titleBarStyle: 'hidden'` and `trafficLightPosition` to mimic native macOS panels.
+
+- **Port**: Vite dev server runs on 34567
+- **Metal GPU**: In packaged builds, `GGML_METAL_PATH_RESOURCES` must point to shader files
+- **asar unpacking**: ffmpeg-static and smart-whisper are unpacked for native binary access
+- **Permissions required**: Microphone (recording), Accessibility (auto-paste)
+
+## Testing
+
+```bash
+npx vitest           # Run all tests
+npx vitest run       # Run once (CI mode)
+```
+
+Test files are in `tests/`.

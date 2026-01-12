@@ -59,6 +59,14 @@ export function useRecording({ isModelReadyRef, autoPasteRef, showSettings }: Us
             const analyser = audioContext.createAnalyser();
             const source = audioContext.createMediaStreamSource(stream);
             source.connect(analyser);
+
+            // Connect analyser to a silent gain node to complete the audio graph
+            // Without this, the analyser may not receive audio data in newer Chromium
+            const silentGain = audioContext.createGain();
+            silentGain.gain.value = 0;
+            analyser.connect(silentGain);
+            silentGain.connect(audioContext.destination);
+
             sourceRef.current = source;
             analyser.fftSize = 2048;
             audioContextRef.current = audioContext;
@@ -81,9 +89,9 @@ export function useRecording({ isModelReadyRef, autoPasteRef, showSettings }: Us
     // Process audio
     const processAudio = useCallback(async (audioBlob: Blob, isSegment: boolean, sessionMaxVolume: number) => {
         try {
-            if (sessionMaxVolume < 3.0) {
+            // Only skip low volume for VAD-triggered segments, not manual stops
+            if (isSegment && sessionMaxVolume < 3.0) {
                 console.log('[useRecording] Skipped low volume segment:', sessionMaxVolume);
-                if (!isSegment) setStatus('idle');
                 return;
             }
 

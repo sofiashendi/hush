@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { calculateRMS } from '../utils/audioUtils';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('Recording');
 
 // Volume thresholds for Voice Activity Detection (VAD)
 const LOW_VOLUME_THRESHOLD = 3.0; // Minimum volume to process audio
@@ -82,9 +85,9 @@ export function useRecording({
       analyser.fftSize = 2048;
       audioContextRef.current = audioContext;
       analyserRef.current = analyser;
-      console.log('[useRecording] Microphone ready.');
+      log.info('Microphone ready');
     } catch (err) {
-      console.error('[useRecording] Failed to init microphone:', err);
+      log.error('Failed to init microphone', err);
     }
   }, []);
 
@@ -103,7 +106,7 @@ export function useRecording({
       try {
         // Only skip low volume for VAD-triggered segments, not manual stops
         if (isSegment && sessionMaxVolume < LOW_VOLUME_THRESHOLD) {
-          console.log('[useRecording] Skipped low volume segment:', sessionMaxVolume);
+          log.info('Skipped low volume segment', { sessionMaxVolume });
           return;
         }
 
@@ -126,7 +129,7 @@ export function useRecording({
         cleanedText = cleanedText.trim();
 
         if (cleanedText.length === 0) {
-          console.log('[useRecording] Filtered empty:', text);
+          log.info('Filtered empty', { originalText: text });
           if (!isSegment) setStatus('idle');
           return;
         }
@@ -146,7 +149,7 @@ export function useRecording({
         }
         if (!isSegment) setStatus('idle');
       } catch (error) {
-        console.error(error);
+        log.error('Process audio error', error);
         if (!isSegment) setStatus('error');
         setTimeout(() => setStatus('idle'), 3000);
       }
@@ -253,7 +256,7 @@ export function useRecording({
           (currentSize > MAX_SEGMENT_SIZE_BYTES || segmentAge > MAX_SEGMENT_DURATION_MS) &&
           audioChunksRef.current.length > 0
         ) {
-          console.log(`[VAD] Safety flush: Size=${(currentSize / 1024 / 1024).toFixed(1)}MB`);
+          log.debug('Safety flush', { sizeMB: (currentSize / 1024 / 1024).toFixed(1) });
           isSpeakingRef.current = true;
           flushSegment();
         }
@@ -307,7 +310,7 @@ export function useRecording({
             silenceStartRef.current = null;
             isSpeakingRef.current = false;
 
-            console.log(`[Stop] User stopped. Processing final segment: ${blob.size} bytes`);
+            log.info('User stopped. Processing final segment', { bytes: blob.size });
 
             if (blob.size > 0) {
               // Process the final segment - set status to processing while we wait
@@ -338,7 +341,7 @@ export function useRecording({
         setDuration(Math.floor((Date.now() - startTime) / 1000));
       }, 100);
     } catch (err) {
-      console.error(err);
+      log.error('Start recording error', err);
       setStatus('idle');
     }
   }, [initAudio, processAudio]);
@@ -352,21 +355,21 @@ export function useRecording({
 
   // Toggle recording
   const handleToggle = useCallback(() => {
-    console.log('[useRecording] Toggle triggered. Status:', statusRef.current);
+    log.info('Toggle triggered', { status: statusRef.current });
     if (showSettings || !isModelReadyRef.current) return;
 
     const now = Date.now();
     if (now - lastToggleTimeRef.current < 250) {
-      console.log('[useRecording] Debounced');
+      log.debug('Debounced');
       return;
     }
     lastToggleTimeRef.current = now;
 
     if (statusRef.current === 'recording') {
-      console.log('[useRecording] Stopping...');
+      log.info('Stopping');
       stopRecording();
     } else if (statusRef.current === 'idle') {
-      console.log('[useRecording] Starting...');
+      log.info('Starting');
       startRecording();
     }
   }, [showSettings, isModelReadyRef, startRecording, stopRecording]);

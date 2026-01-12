@@ -3,7 +3,10 @@ import path from 'path';
 import fs from 'fs';
 
 // Import modular components
+import { createLogger } from './lib/logger';
 import { loadConfig, saveConfig } from './lib/config';
+
+const log = createLogger('Main');
 import { setupClipboardHandlers } from './lib/clipboard';
 import { initWhisper, cleanupTempFiles, setWhisperWindow } from './lib/whisper';
 
@@ -31,10 +34,10 @@ const createWindow = () => {
       try {
         app.dock?.setIcon(iconPath);
       } catch (err) {
-        console.error('Critical: Failed to set dock icon', err);
+        log.error('Critical: Failed to set dock icon', err);
       }
     } else {
-      console.log('No icon found at', iconPath);
+      log.info('No icon found', { path: iconPath });
     }
   }
 
@@ -70,7 +73,7 @@ const createWindow = () => {
 
   // In dev, always try to load the local vite server
   if (process.env.VITE_DEV_SERVER_URL) {
-    console.log('Loading URL:', process.env.VITE_DEV_SERVER_URL);
+    log.info('Loading URL', { url: process.env.VITE_DEV_SERVER_URL });
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist-react/index.html'));
@@ -85,17 +88,17 @@ const createWindow = () => {
 
   // DEBUG: Log renderer errors
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.error('Renderer failed to load:', errorCode, errorDescription);
+    log.error('Renderer failed to load', { errorCode, errorDescription });
     if (errorCode === -102) {
       setTimeout(() => {
-        console.log('Reloading window...');
+        log.info('Reloading window');
         mainWindow?.loadURL(`http://localhost:${DEV_PORT}`);
       }, 1000);
     }
   });
 
   mainWindow.webContents.on('render-process-gone', (event, details) => {
-    console.error('Renderer process gone:', details.reason);
+    log.error('Renderer process gone', { reason: details.reason });
   });
 
   // Tray Setup
@@ -124,7 +127,7 @@ ipcMain.handle('set-tray-title', (event, title) => {
 
 // Renderer log handler
 ipcMain.on('renderer-log', (event, message) => {
-  console.log('[RENDERER]', message);
+  log.info('[RENDERER]', { message });
 });
 
 // Config IPC handlers
@@ -150,24 +153,24 @@ app.whenReady().then(() => {
   createWindow();
 
   // Register global shortcut
-  console.log("Registering global shortcut: Command+'");
+  log.info("Registering global shortcut: Command+'");
   const ret = globalShortcut.register("Command+'", () => {
-    console.log('Global shortcut triggered!');
+    log.info('Global shortcut triggered');
     if (mainWindow) {
       if (!mainWindow.isVisible()) {
-        console.log('Showing window');
+        log.info('Showing window');
         mainWindow.show();
         mainWindow.webContents.focus();
       }
-      console.log('Sending toggle-recording event');
+      log.info('Sending toggle-recording event');
       mainWindow.webContents.send('toggle-recording');
     }
   });
 
   if (!ret) {
-    console.error('registration failed');
+    log.error('Global shortcut registration failed');
   } else {
-    console.log('Global shortcut registered successfully');
+    log.info('Global shortcut registered successfully');
   }
 
   app.on('activate', () => {

@@ -2,6 +2,9 @@ import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
 import { ModelType } from './models';
+import { createLogger } from './logger';
+
+const log = createLogger('Config');
 
 // Type-safe configuration interface
 export interface AppConfig {
@@ -30,7 +33,7 @@ export const loadConfig = (): AppConfig => {
       return config as AppConfig;
     }
   } catch (error) {
-    console.error('Error loading config:', error);
+    log.error('Error loading config', error);
   }
   return {};
 };
@@ -41,7 +44,7 @@ export const saveConfig = (newConfig: AppConfig): boolean => {
     fs.writeFileSync(configPath, JSON.stringify(newConfig, null, 2));
     return true;
   } catch (error) {
-    console.error('Error saving config:', error);
+    log.error('Error saving config', error);
     return false;
   }
 };

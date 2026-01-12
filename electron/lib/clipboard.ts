@@ -1,5 +1,8 @@
 import { ipcMain, clipboard, BrowserWindow } from 'electron';
 import { execFile } from 'child_process';
+import { createLogger } from './logger';
+
+const log = createLogger('Clipboard');
 
 // Store reference to main window for focus checks
 let mainWindow: BrowserWindow | null = null;
@@ -19,7 +22,7 @@ ipcMain.handle('type-placeholder', async () => {
   const script = `tell application "System Events" to keystroke "..."`;
 
   execFile('osascript', ['-e', script], (err) => {
-    if (err) console.error('Placeholder error:', err);
+    if (err) log.error('Placeholder error', err);
   });
 });
 
@@ -33,13 +36,13 @@ ipcMain.handle('remove-placeholder', async () => {
     end tell`;
 
   execFile('osascript', ['-e', script], (err) => {
-    if (err) console.error('Remove placeholder error:', err);
+    if (err) log.error('Remove placeholder error', err);
   });
 });
 
 // Smart paste with role detection
 ipcMain.handle('paste-text', async (event, text, autoPaste = false) => {
-  console.log('Copying text to clipboard:', text);
+  log.info('Copying text to clipboard', { text });
   clipboard.writeText(text);
 
   if (autoPaste) {
@@ -62,7 +65,7 @@ ipcMain.handle('paste-text', async (event, text, autoPaste = false) => {
 
       execFile('osascript', ['-e', checkEditableScript], (checkErr, checkStdout) => {
         const role = checkStdout?.trim();
-        console.log(`[Smart Paste] Focused Role: ${role}`);
+        log.info('Smart Paste: Focused Role', { role });
 
         const editableRoles = [
           'AXTextField',
@@ -75,22 +78,22 @@ ipcMain.handle('paste-text', async (event, text, autoPaste = false) => {
         const extendedRoles = [...editableRoles, 'Unknown'];
 
         if (extendedRoles.includes(role)) {
-          console.log(`[Smart Paste] Pasting into ${role}...`);
+          log.info('Smart Paste: Pasting', { role });
           // We DO NOT need to hide window here because we are NOT focused (mainWindow.isFocused() check passed).
           // So we can just paste immediately!
 
           const script = `tell application "System Events" to keystroke "v" using command down`;
           execFile('osascript', ['-e', script], (error) => {
-            if (error) console.error('Auto-paste exec error:', error);
+            if (error) log.error('Auto-paste exec error', error);
           });
         } else {
-          console.log(`[Smart Paste] Skipped pasting for role: ${role}. Text is in clipboard.`);
+          log.info('Smart Paste: Skipped pasting. Text is in clipboard', { role });
         }
       });
     } else {
       // Hush IS focused.
       // Correct Behavior: Just Copy to Clipboard. Stay Visible.
-      console.log('[Smart Paste] Hush is focused. Copied to Clipboard. NOT Pasting/Hiding.');
+      log.info('Smart Paste: Hush is focused. Copied to Clipboard. NOT Pasting/Hiding');
     }
   }
 });

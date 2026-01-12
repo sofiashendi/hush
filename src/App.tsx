@@ -6,6 +6,9 @@ import { LiveTranscript } from './components/LiveTranscript';
 import { SettingsPanel } from './components/SettingsPanel';
 import { Settings, X } from 'lucide-react';
 import { useModelStatus, useConfig, useRecording } from './hooks';
+import { createLogger } from './utils/logger';
+
+const log = createLogger('App');
 
 export default function App() {
   // UI State
@@ -21,31 +24,18 @@ export default function App() {
     showSettings,
   });
 
-  // Console logging for main process
+  // Set up toggle recording listener
   useEffect(() => {
-    const originalLog = console.log;
-    const originalError = console.error;
-    console.log = (...args) => {
-      originalLog(...args);
-      window.electronAPI.log(args.map((a) => String(a)).join(' '));
-    };
-    console.error = (...args) => {
-      originalError(...args);
-      window.electronAPI.log('ERROR: ' + args.map((a) => String(a)).join(' '));
-    };
-
     const removeToggleListener = window.electronAPI.onToggleRecording(() => {
       handleToggle();
     });
 
     return () => {
-      console.log = originalLog;
-      console.error = originalError;
       removeToggleListener();
     };
   }, [handleToggle]);
 
-  console.log('[App Render] Status:', status, 'Transcript Len:', transcript.length);
+  log.debug('Render', { status, transcriptLength: transcript.length });
 
   return (
     <div className="min-h-screen bg-transparent flex items-center justify-center p-4">

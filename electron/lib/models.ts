@@ -2,6 +2,9 @@ import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
 import https from 'https';
+import { createLogger } from './logger';
+
+const log = createLogger('Models');
 
 export type ModelType = 'base' | 'small' | 'large-v3-turbo';
 
@@ -46,14 +49,14 @@ export class ModelManager {
     // 1. Check bundled resources first (only for base usually, but generic here)
     const bundledPath = path.join(this.resourcesPath, config.filename);
     if (fs.existsSync(bundledPath)) {
-      console.log(`[ModelManager] Found bundled model: ${bundledPath}`);
+      log.info('Found bundled model', { path: bundledPath });
       return bundledPath;
     }
 
     // 2. Check userData download cache
     const cachedPath = path.join(this.userDataPath, config.filename);
     if (fs.existsSync(cachedPath)) {
-      console.log(`[ModelManager] Found cached model: ${cachedPath}`);
+      log.info('Found cached model', { path: cachedPath });
       return cachedPath;
     }
 
@@ -67,7 +70,7 @@ export class ModelManager {
     // Helper for async cleanup without blocking
     const cleanupDestFile = () => {
       fs.promises.rm(destPath, { force: true }).catch((err) => {
-        console.warn('[ModelManager] Cleanup warning:', err.message);
+        log.warn('Cleanup warning', { message: err.message });
       });
     };
 
@@ -91,7 +94,7 @@ export class ModelManager {
             ) {
               file.destroy();
               // Don't cleanup - the recursive call will create a new file
-              console.log(`[ModelManager] Following redirect to: ${response.headers.location}`);
+              log.info('Following redirect', { location: response.headers.location });
               return resolve(downloadWithRedirects(response.headers.location, redirectCount + 1));
             }
 
@@ -121,18 +124,16 @@ export class ModelManager {
               // Verify the file actually exists
               if (fs.existsSync(destPath)) {
                 const stats = fs.statSync(destPath);
-                console.log(`[ModelManager] Download complete: ${destPath} (${stats.size} bytes)`);
+                log.info('Download complete', { path: destPath, bytes: stats.size });
                 resolve(destPath);
               } else {
-                console.error(
-                  `[ModelManager] CRITICAL: File not found after download: ${destPath}`
-                );
+                log.error('CRITICAL: File not found after download', { path: destPath });
                 reject(new Error('File not found after download'));
               }
             });
 
             file.on('error', (err) => {
-              console.error(`[ModelManager] File stream error: ${err.message}`);
+              log.error('File stream error', { message: err.message });
               cleanupDestFile();
               reject(err);
             });

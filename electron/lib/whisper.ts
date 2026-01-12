@@ -5,6 +5,12 @@ import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 import { app, ipcMain, BrowserWindow } from 'electron';
 import ffmpegPathImport from 'ffmpeg-static';
+import { createLogger } from './logger';
+
+const metalLog = createLogger('Metal');
+const ffmpegLog = createLogger('FFmpeg');
+const whisperLog = createLogger('Whisper');
+const cleanupLog = createLogger('Cleanup');
 
 // Fix Metal shader path for packaged app BEFORE importing smart-whisper
 // The GGML_METAL_PATH_RESOURCES environment variable tells whisper.cpp where to find ggml-metal.metal
@@ -40,12 +46,12 @@ if (app.isPackaged) {
 
     if (metalShaderPath) {
       process.env.GGML_METAL_PATH_RESOURCES = metalShaderPath;
-      console.log('[Metal] Set shader path:', metalShaderPath);
+      metalLog.info('Set shader path', { path: metalShaderPath });
     } else {
-      console.warn('[Metal] Shader file not found in:', smartWhisperDirUnpacked);
+      metalLog.warn('Shader file not found', { searchPath: smartWhisperDirUnpacked });
     }
   } catch (e) {
-    console.warn('[Metal] Could not resolve smart-whisper path for Metal shader.', e);
+    metalLog.warn('Could not resolve smart-whisper path for Metal shader', e);
   }
 }
 
@@ -68,24 +74,24 @@ if (ffmpegPathImport) {
   if (app.isPackaged) {
     // In production (packaged), ffmpeg is in app.asar.unpacked
     const unpackedPath = ffmpegPathImport.replace('app.asar', 'app.asar.unpacked');
-    console.log(`[FFMPEG] Packaged mode. Original path: ${ffmpegPathImport}`);
-    console.log(`[FFMPEG] Trying unpacked path: ${unpackedPath}`);
+    ffmpegLog.info('Packaged mode', { originalPath: ffmpegPathImport });
+    ffmpegLog.info('Trying unpacked path', { path: unpackedPath });
 
     if (fs.existsSync(unpackedPath)) {
       resolvedFfmpegPath = unpackedPath;
-      console.log(`[FFMPEG] Found at unpacked path: ${resolvedFfmpegPath}`);
+      ffmpegLog.info('Found at unpacked path', { path: resolvedFfmpegPath });
     } else {
-      console.error(`[FFMPEG] CRITICAL: Could not find ffmpeg binary in packaged app!`);
-      console.error(`[FFMPEG] Tried: ${unpackedPath}`);
+      ffmpegLog.error('CRITICAL: Could not find ffmpeg binary in packaged app');
+      ffmpegLog.error('Tried path', { path: unpackedPath });
       resolvedFfmpegPath = 'ffmpeg'; // System fallback (unlikely to work in sandboxed app)
     }
   } else {
     // In Development, the bundled path might be wrong.
     // We verify the existence and fall back to known locations.
     if (!fs.existsSync(resolvedFfmpegPath)) {
-      console.warn(
-        `[FFMPEG] Default path not found: ${resolvedFfmpegPath}. Searching alternatives...`
-      );
+      ffmpegLog.warn('Default path not found. Searching alternatives', {
+        path: resolvedFfmpegPath,
+      });
 
       // Use require.resolve to programmatically find the ffmpeg-static package
       try {
@@ -93,21 +99,19 @@ if (ffmpegPathImport) {
         const ffmpegStaticDir = path.dirname(ffmpegStaticPkgPath);
         const candidate = path.join(ffmpegStaticDir, 'ffmpeg');
         if (fs.existsSync(candidate)) {
-          console.log(`[FFMPEG] Found executable via require.resolve: ${candidate}`);
+          ffmpegLog.info('Found executable via require.resolve', { path: candidate });
           resolvedFfmpegPath = candidate;
         }
       } catch (e) {
-        console.warn('[FFMPEG] require.resolve failed:', e);
+        ffmpegLog.warn('require.resolve failed', e);
       }
     }
   }
 
   if (fs.existsSync(resolvedFfmpegPath)) {
-    console.log('[FFMPEG] Path resolved to:', resolvedFfmpegPath);
+    ffmpegLog.info('Path resolved', { path: resolvedFfmpegPath });
   } else {
-    console.error(
-      `[FFMPEG] CRITICAL: Could not find ffmpeg binary! Falling back to system ffmpeg.`
-    );
+    ffmpegLog.error('CRITICAL: Could not find ffmpeg binary! Falling back to system ffmpeg');
     resolvedFfmpegPath = 'ffmpeg'; // System fallback
   }
 }
@@ -130,24 +134,24 @@ export const initWhisper = async () => {
   try {
     const config = loadConfig();
     const modelType = (config.model || 'base') as ModelType;
-    console.log(`[Whisper] Loading model preference: ${modelType}`);
+    whisperLog.info('Loading model preference', { modelType });
 
     let modelPath = modelManager.getModelPath(modelType);
 
     // If preferred model not found, try to download it
     if (!modelPath) {
-      console.log(`[Whisper] Model ${modelType} not found. Downloading...`);
+      whisperLog.info('Model not found. Downloading', { modelType });
       try {
         modelPath = await modelManager.downloadModel(modelType, (percent) => {
-          console.log(`[Whisper] Download progress: ${percent}%`);
+          whisperLog.info('Download progress', { percent });
           // Send to renderer if window exists
           if (mainWindow) {
             mainWindow.webContents.send('download-progress', percent);
           }
         });
-        console.log(`[Whisper] Download complete: ${modelPath}`);
+        whisperLog.info('Download complete', { modelPath });
       } catch (downloadErr) {
-        console.error(`[Whisper] Failed to download model:`, downloadErr);
+        whisperLog.error('Failed to download model', downloadErr);
         if (mainWindow) {
           mainWindow.webContents.send(
             'model-error',
@@ -159,27 +163,27 @@ export const initWhisper = async () => {
     }
 
     if (modelPath) {
-      console.log(`[Whisper] Initializing with model: ${modelPath}`);
+      whisperLog.info('Initializing with model', { modelPath });
       // Free previous instance if exists
       if (whisperInstance) {
         await whisperInstance.free();
         whisperInstance = null;
       }
       whisperInstance = new Whisper(modelPath, { gpu: true });
-      console.log('[Whisper] Ready.');
+      whisperLog.info('Ready');
 
       // Notify renderer that model is ready
       if (mainWindow) {
         mainWindow.webContents.send('model-ready');
       }
     } else {
-      console.error('[Whisper] Model not found and download failed!');
+      whisperLog.error('Model not found and download failed');
       if (mainWindow) {
         mainWindow.webContents.send('model-error', 'Model not found. Please restart the app.');
       }
     }
   } catch (err) {
-    console.error('[Whisper] Initialization failed:', err);
+    whisperLog.error('Initialization failed', err);
     if (mainWindow) {
       mainWindow.webContents.send('model-error', 'Failed to initialize transcription engine.');
     }
@@ -204,9 +208,9 @@ export const cleanupTempFiles = async () => {
     );
 
     const count = results.filter((r) => r.status === 'fulfilled').length;
-    if (count > 0) console.log(`[Cleanup] Removed ${count} temporary files.`);
+    if (count > 0) cleanupLog.info('Removed temporary files', { count });
   } catch (err) {
-    console.error('[Cleanup] Failed to clean temp files:', err);
+    cleanupLog.error('Failed to clean temp files', err);
   }
 };
 
@@ -221,7 +225,7 @@ ipcMain.handle('switch-model', async (event, modelType: ModelType) => {
   let modelPath = modelManager.getModelPath(modelType);
 
   if (!modelPath) {
-    console.log(`[Whisper] Model ${modelType} not found. Downloading...`);
+    whisperLog.info('Model not found. Downloading', { modelType });
     // Notify renderer that download started (0%)
     event.sender.send('download-progress', 0);
 
@@ -229,15 +233,15 @@ ipcMain.handle('switch-model', async (event, modelType: ModelType) => {
       modelPath = await modelManager.downloadModel(modelType, (percent) => {
         event.sender.send('download-progress', percent);
       });
-      console.log(`[Whisper] Download complete: ${modelPath}`);
+      whisperLog.info('Download complete', { modelPath });
       event.sender.send('download-progress', 100); // Ensure 100% is sent
     } catch (error) {
-      console.error(`[Whisper] Download failed:`, error);
+      whisperLog.error('Download failed', error);
       throw error;
     }
   }
 
-  console.log(`[Whisper] Switching to ${modelType}...`);
+  whisperLog.info('Switching model', { modelType });
 
   // Create new instance
   try {
@@ -248,7 +252,7 @@ ipcMain.handle('switch-model', async (event, modelType: ModelType) => {
     }
 
     whisperInstance = new Whisper(modelPath, { gpu: true });
-    console.log(`[Whisper] Switched to ${modelType}`);
+    whisperLog.info('Switched to model', { modelType });
 
     // Persist choice to config
     const config = loadConfig();
@@ -257,17 +261,17 @@ ipcMain.handle('switch-model', async (event, modelType: ModelType) => {
 
     return true;
   } catch (error) {
-    console.error(`[Whisper] Failed to switch model:`, error);
+    whisperLog.error('Failed to switch model', error);
     throw error;
   }
 });
 
 // Transcribe audio handler
 ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
-  console.log(`[Whisper] Transcribing ${audioBuffer.byteLength} bytes...`);
+  whisperLog.info('Transcribing', { bytes: audioBuffer.byteLength });
 
   if (!whisperInstance) {
-    console.warn('[Whisper] Instance not ready, attempting re-init...');
+    whisperLog.warn('Instance not ready, attempting re-init');
     await initWhisper();
     if (!whisperInstance) {
       throw new Error(
@@ -289,7 +293,7 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
         fs.promises.rm(tempPcm, { force: true }),
       ]);
     } catch (e) {
-      console.error('Temp cleanup error:', e);
+      cleanupLog.error('Temp cleanup error', e);
     }
   };
 
@@ -336,7 +340,7 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
       pcmBuffer.length / 4
     );
 
-    console.log(`[Whisper] PCM converted. Samples: ${float32Data.length}`);
+    whisperLog.info('PCM converted', { samples: float32Data.length });
 
     // Transcribe the PCM data
     const task = await whisperInstance.transcribe(float32Data, { language: 'auto' });
@@ -352,7 +356,7 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
       text = (result as { text?: string })?.text?.trim() || '';
     }
 
-    console.log(`[Whisper] Result: "${text}"`);
+    whisperLog.info('Result', { text });
 
     const HALLUCINATION_PATTERNS = [
       /^\s*\.+\s*$/, // Only periods/whitespace
@@ -362,13 +366,13 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
     ];
 
     if (HALLUCINATION_PATTERNS.some((p) => p.test(text))) {
-      console.log('[Whisper] Filtered hallucination');
+      whisperLog.info('Filtered hallucination');
       return { text: '' };
     }
 
     return { text };
   } catch (error) {
-    console.error('[Whisper] Transcription error:', error);
+    whisperLog.error('Transcription error', error);
     throw error;
   } finally {
     // Always cleanup temp files

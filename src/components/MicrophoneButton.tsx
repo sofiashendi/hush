@@ -18,7 +18,7 @@ export function MicrophoneButton({ isRecording, onToggle }: MicrophoneButtonProp
     '#3ABFE2',
     '#4AD3D9',
     '#5AE7CF',
-    '#30D158'  // Green
+    '#30D158', // Green
   ];
 
   // Simulate organic symmetric voice activity
@@ -34,7 +34,7 @@ export function MicrophoneButton({ isRecording, onToggle }: MicrophoneButtonProp
             centerEnergy * 0.3 + Math.random() * 0.1, // Outer Left
             centerEnergy * 0.6 + Math.random() * 0.1, // Mid Left
             centerEnergy * 0.85 + Math.random() * 0.1, // Inner Left
-            centerEnergy,                             // Center (Peak)
+            centerEnergy, // Center (Peak)
             centerEnergy * 0.85 + Math.random() * 0.1, // Inner Right
             centerEnergy * 0.6 + Math.random() * 0.1, // Mid Right
             centerEnergy * 0.3 + Math.random() * 0.1, // Outer Right
@@ -60,13 +60,13 @@ export function MicrophoneButton({ isRecording, onToggle }: MicrophoneButtonProp
               initial={{ opacity: 0, scale: 1 }}
               animate={{
                 opacity: [0, 0.3, 0],
-                scale: [1, 1.4 + i * 0.2]
+                scale: [1, 1.4 + i * 0.2],
               }}
               transition={{
                 duration: 2.5,
                 repeat: Infinity,
                 delay: i * 0.5,
-                ease: "easeOut"
+                ease: 'easeOut',
               }}
             />
           ))}
@@ -77,18 +77,18 @@ export function MicrophoneButton({ isRecording, onToggle }: MicrophoneButtonProp
         onClick={onToggle}
         className="relative w-32 h-32 rounded-full backdrop-blur-xl bg-white/10 border border-white/20 flex items-center justify-center group overflow-hidden cursor-pointer"
         style={{
-          borderColor: isRecording ? '#0A84FF' : '#ffffff20'
+          borderColor: isRecording ? '#0A84FF' : '#ffffff20',
         }}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         animate={{
           boxShadow: isRecording
             ? [
-              '0 0 0px rgba(10, 132, 255, 0)',
-              '0 0 30px rgba(10, 132, 255, 0.4)',
-              '0 0 0px rgba(10, 132, 255, 0)',
-            ]
-            : '0 0 20px rgba(255, 255, 255, 0.05)'
+                '0 0 0px rgba(10, 132, 255, 0)',
+                '0 0 30px rgba(10, 132, 255, 0.4)',
+                '0 0 0px rgba(10, 132, 255, 0)',
+              ]
+            : '0 0 20px rgba(255, 255, 255, 0.05)',
         }}
         transition={{ duration: 3, repeat: isRecording ? Infinity : 0 }}
       >
@@ -98,7 +98,7 @@ export function MicrophoneButton({ isRecording, onToggle }: MicrophoneButtonProp
           style={{
             background: isRecording
               ? 'radial-gradient(circle at center, rgba(10, 132, 255, 0.8) 0%, transparent 70%)'
-              : 'none'
+              : 'none',
           }}
           animate={{ scale: isRecording ? [0.8, 1.2, 0.8] : 1 }}
           transition={{ duration: 3, repeat: Infinity }}
@@ -115,9 +115,31 @@ export function MicrophoneButton({ isRecording, onToggle }: MicrophoneButtonProp
             </defs>
             <g>
               <rect x="216" y="160" width="80" height="120" rx="40" fill="url(#btnMicGradient)" />
-              <path d="M 186 310 Q 186 340 216 340 L 296 340 Q 326 340 326 310" stroke="url(#btnMicGradient)" strokeWidth="32" fill="none" strokeLinecap="round" />
-              <line x1="256" y1="340" x2="256" y2="380" stroke="url(#btnMicGradient)" strokeWidth="32" strokeLinecap="round" />
-              <line x1="220" y1="380" x2="292" y2="380" stroke="url(#btnMicGradient)" strokeWidth="32" strokeLinecap="round" />
+              <path
+                d="M 186 310 Q 186 340 216 340 L 296 340 Q 326 340 326 310"
+                stroke="url(#btnMicGradient)"
+                strokeWidth="32"
+                fill="none"
+                strokeLinecap="round"
+              />
+              <line
+                x1="256"
+                y1="340"
+                x2="256"
+                y2="380"
+                stroke="url(#btnMicGradient)"
+                strokeWidth="32"
+                strokeLinecap="round"
+              />
+              <line
+                x1="220"
+                y1="380"
+                x2="292"
+                y2="380"
+                stroke="url(#btnMicGradient)"
+                strokeWidth="32"
+                strokeLinecap="round"
+              />
             </g>
           </svg>
         ) : (
@@ -129,14 +151,14 @@ export function MicrophoneButton({ isRecording, onToggle }: MicrophoneButtonProp
                 className="w-1.5 rounded-full"
                 style={{
                   backgroundColor: barColors[i],
-                  boxShadow: `0 0 10px ${barColors[i]}60`
+                  boxShadow: `0 0 10px ${barColors[i]}60`,
                 }}
                 animate={{
                   height: `${Math.max(8, level * 50)}px`,
                 }}
                 transition={{
                   duration: 0.1, // Fast updates for responsiveness
-                  ease: "linear"
+                  ease: 'linear',
                 }}
               />
             ))}

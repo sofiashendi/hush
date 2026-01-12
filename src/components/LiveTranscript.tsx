@@ -10,8 +10,19 @@ interface LiveTranscriptProps {
   variant?: 'blue' | 'amber';
 }
 
-export function LiveTranscript({ transcript, isRecording, wordCount, label = 'Live Transcript', variant = 'blue' }: LiveTranscriptProps) {
-  console.log('[LiveTranscript Render] Len:', transcript.length, 'Msg:', transcript.substring(0, 20));
+export function LiveTranscript({
+  transcript,
+  isRecording,
+  wordCount,
+  label = 'Live Transcript',
+  variant = 'blue',
+}: LiveTranscriptProps) {
+  console.log(
+    '[LiveTranscript Render] Len:',
+    transcript.length,
+    'Msg:',
+    transcript.substring(0, 20)
+  );
   const transcriptRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
 
@@ -49,7 +60,9 @@ export function LiveTranscript({ transcript, isRecording, wordCount, label = 'Li
           ) : (
             <Sparkles className="w-4 h-4 text-blue-400" />
           )}
-          <span className={`text-xs tracking-wide uppercase ${variant === 'amber' ? 'text-amber-400/60' : 'text-white/60'}`}>
+          <span
+            className={`text-xs tracking-wide uppercase ${variant === 'amber' ? 'text-amber-400/60' : 'text-white/60'}`}
+          >
             {label}
           </span>
         </div>
@@ -78,35 +91,53 @@ export function LiveTranscript({ transcript, isRecording, wordCount, label = 'Li
       {/* Transcript container */}
       <div
         ref={transcriptRef}
-        className={`relative backdrop-blur-xl rounded-2xl border p-5 max-h-48 overflow-y-auto scroll-smooth ${variant === 'amber'
+        className={`relative backdrop-blur-xl rounded-2xl border p-5 max-h-48 overflow-y-auto scroll-smooth ${
+          variant === 'amber'
             ? 'bg-amber-500/10 border-amber-500/20'
             : 'bg-black/40 border-white/10'
-          }`}
+        }`}
       >
         {/* Transcript text */}
         {transcript ? (
-          <p className={`text-sm leading-relaxed font-mono pr-12 ${variant === 'amber' ? 'text-amber-200/90' : 'text-white/90'}`}>
+          <p
+            className={`text-sm leading-relaxed font-mono pr-12 ${variant === 'amber' ? 'text-amber-200/90' : 'text-white/90'}`}
+          >
             {transcript}
             {isRecording && (
-              <span className={`inline-block w-1.5 h-4 ml-0.5 align-middle animate-pulse ${variant === 'amber' ? 'bg-amber-400' : 'bg-blue-400'}`} />
+              <span
+                className={`inline-block w-1.5 h-4 ml-0.5 align-middle animate-pulse ${variant === 'amber' ? 'bg-amber-400' : 'bg-blue-400'}`}
+              />
             )}
           </p>
         ) : (
-          <div className={`flex items-center gap-2 text-sm ${variant === 'amber' ? 'text-amber-400/40' : 'text-white/40'}`}>
+          <div
+            className={`flex items-center gap-2 text-sm ${variant === 'amber' ? 'text-amber-400/40' : 'text-white/40'}`}
+          >
             {isRecording && (
               <div className="flex gap-1 animate-pulse">
-                <span className={`w-1.5 h-1.5 rounded-full ${variant === 'amber' ? 'bg-amber-400' : 'bg-blue-400'}`} />
-                <span className={`w-1.5 h-1.5 rounded-full ${variant === 'amber' ? 'bg-amber-400' : 'bg-blue-400'}`} />
-                <span className={`w-1.5 h-1.5 rounded-full ${variant === 'amber' ? 'bg-amber-400' : 'bg-blue-400'}`} />
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${variant === 'amber' ? 'bg-amber-400' : 'bg-blue-400'}`}
+                />
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${variant === 'amber' ? 'bg-amber-400' : 'bg-blue-400'}`}
+                />
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${variant === 'amber' ? 'bg-amber-400' : 'bg-blue-400'}`}
+                />
               </div>
             )}
-            <span className="font-mono">{isRecording ? "Listening..." : "Waiting for speech..."}</span>
+            <span className="font-mono">
+              {isRecording ? 'Listening...' : 'Waiting for speech...'}
+            </span>
           </div>
         )}
 
         {/* Subtle gradient overlay at bottom */}
-        <div className={`absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t pointer-events-none rounded-b-2xl ${variant === 'amber' ? 'from-amber-900/40' : 'from-black/60'
-          } to-transparent`} />
+        <div
+          className={`absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t pointer-events-none rounded-b-2xl ${
+            variant === 'amber' ? 'from-amber-900/40' : 'from-black/60'
+          } to-transparent`}
+        />
       </div>
     </motion.div>
   );

@@ -207,8 +207,12 @@ export const cleanupTempFiles = async () => {
       hushFiles.map((file) => fs.promises.unlink(path.join(tmpDir, file)))
     );
 
-    const count = results.filter((r) => r.status === 'fulfilled').length;
-    if (count > 0) cleanupLog.info('Removed temporary files', { count });
+    const fulfilledCount = results.filter((r) => r.status === 'fulfilled').length;
+    if (fulfilledCount > 0) cleanupLog.info('Removed temporary files', { count: fulfilledCount });
+
+    const rejectedCount = results.filter((r) => r.status === 'rejected').length;
+    if (rejectedCount > 0)
+      cleanupLog.warn('Failed to remove some temp files', { count: rejectedCount });
   } catch (err) {
     cleanupLog.error('Failed to clean temp files', err);
   }

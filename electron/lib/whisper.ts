@@ -291,13 +291,15 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
 
   // Helper to cleanup temp files (async to avoid blocking main process)
   const cleanupTranscriptionFiles = async () => {
-    try {
-      await Promise.allSettled([
-        fs.promises.rm(tempInput, { force: true }),
-        fs.promises.rm(tempPcm, { force: true }),
-      ]);
-    } catch (e) {
-      cleanupLog.error('Temp cleanup error', e);
+    const results = await Promise.allSettled([
+      fs.promises.rm(tempInput, { force: true }),
+      fs.promises.rm(tempPcm, { force: true }),
+    ]);
+
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        cleanupLog.warn('Failed to clean up temp file', { error: result.reason });
+      }
     }
   };
 

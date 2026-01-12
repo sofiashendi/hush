@@ -13,7 +13,16 @@ const isDev = process.env.NODE_ENV !== 'production';
 function formatLog(entry: LogEntry): string {
   const { timestamp, level, module, message, data } = entry;
   const prefix = `[${timestamp}] [${level.toUpperCase()}] [${module}]`;
-  const dataStr = data ? ` ${JSON.stringify(data)}` : '';
+  let dataStr = '';
+  if (data) {
+    try {
+      const replacer = (_key: string, value: unknown) =>
+        value instanceof Error ? { message: value.message, stack: value.stack } : value;
+      dataStr = ` ${JSON.stringify(data, replacer)}`;
+    } catch {
+      dataStr = ' [Unserializable data]';
+    }
+  }
   return `${prefix} ${message}${dataStr}`;
 }
 

@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { calculateRMS } from '../utils/audioUtils';
 
+// Volume thresholds for Voice Activity Detection (VAD)
+const LOW_VOLUME_THRESHOLD = 3.0;    // Minimum volume to process audio
+const SILENCE_THRESHOLD = 5.0;       // Below this is considered silence
+const SPEAKING_THRESHOLD = 8.0;      // Above this indicates active speech
+
 export type RecordingStatus = 'idle' | 'starting' | 'recording' | 'processing' | 'error';
 
 interface UseRecordingOptions {
@@ -59,6 +64,14 @@ export function useRecording({ isModelReadyRef, autoPasteRef, showSettings }: Us
             const analyser = audioContext.createAnalyser();
             const source = audioContext.createMediaStreamSource(stream);
             source.connect(analyser);
+
+            // Connect analyser to a silent gain node to complete the audio graph
+            // Without this, the analyser may not receive audio data in newer Chromium
+            const silentGain = audioContext.createGain();
+            silentGain.gain.value = 0;
+            analyser.connect(silentGain);
+            silentGain.connect(audioContext.destination);
+
             sourceRef.current = source;
             analyser.fftSize = 2048;
             audioContextRef.current = audioContext;
@@ -81,9 +94,9 @@ export function useRecording({ isModelReadyRef, autoPasteRef, showSettings }: Us
     // Process audio
     const processAudio = useCallback(async (audioBlob: Blob, isSegment: boolean, sessionMaxVolume: number) => {
         try {
-            if (sessionMaxVolume < 3.0) {
+            // Only skip low volume for VAD-triggered segments, not manual stops
+            if (isSegment && sessionMaxVolume < LOW_VOLUME_THRESHOLD) {
                 console.log('[useRecording] Skipped low volume segment:', sessionMaxVolume);
-                if (!isSegment) setStatus('idle');
                 return;
             }
 
@@ -178,7 +191,7 @@ export function useRecording({ isModelReadyRef, autoPasteRef, showSettings }: Us
                     return;
                 }
 
-                const isSilence = maxVolumeRef.current < 5.0;
+                const isSilence = maxVolumeRef.current < SILENCE_THRESHOLD;
                 if (isSilence && !isSpeakingRef.current) {
                     audioChunksRef.current = [];
                     segmentStartTime = Date.now();
@@ -206,11 +219,11 @@ export function useRecording({ isModelReadyRef, autoPasteRef, showSettings }: Us
 
                 const now = Date.now();
 
-                if (rms > 3.0) {
+                if (rms > LOW_VOLUME_THRESHOLD) {
                     lastActivityTimeRef.current = now;
                 }
 
-                if (rms > 8.0) {
+                if (rms > SPEAKING_THRESHOLD) {
                     silenceStartRef.current = null;
                     isSpeakingRef.current = true;
                 } else {

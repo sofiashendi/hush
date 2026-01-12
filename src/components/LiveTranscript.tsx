@@ -1,6 +1,9 @@
-import React, { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Sparkles, Copy, Check, Mic } from 'lucide-react';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('LiveTranscript');
 
 interface LiveTranscriptProps {
   transcript: string;
@@ -17,12 +20,6 @@ export function LiveTranscript({
   label = 'Live Transcript',
   variant = 'blue',
 }: LiveTranscriptProps) {
-  console.log(
-    '[LiveTranscript Render] Len:',
-    transcript.length,
-    'Msg:',
-    transcript.substring(0, 20)
-  );
   const transcriptRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
 
@@ -33,7 +30,7 @@ export function LiveTranscript({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      console.error('Failed to copy:', err);
+      log.error('Failed to copy to clipboard', { error: err });
     }
   };
 

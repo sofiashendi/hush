@@ -113,6 +113,8 @@ if (app.isPackaged) {
       if (fs.existsSync(candidate)) {
         resolvedFfmpegPath = candidate;
         ffmpegLog.info('Found ffmpeg via require.resolve', { path: resolvedFfmpegPath });
+      } else {
+        ffmpegLog.warn('ffmpeg binary not found at expected path in package', { path: candidate });
       }
     } catch (e) {
       ffmpegLog.warn('require.resolve failed', e);

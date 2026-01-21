@@ -23,5 +23,8 @@ interface Window {
     onModelError: (callback: (message: string) => void) => () => void;
     isModelReady: () => Promise<boolean>;
     log: (message: string) => void;
+    checkAccessibilityPermission: () => Promise<boolean>;
+    openAccessibilitySettings: () => Promise<void>;
+    onAccessibilityPermissionChanged: (callback: (granted: boolean) => void) => () => void;
   };
 }

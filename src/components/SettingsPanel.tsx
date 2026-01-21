@@ -29,13 +29,10 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           if (hasPermission) {
             setAutoPaste(true);
           } else {
-            // Permission was revoked or app signature changed - disable and show warning
+            // Permission was revoked or app signature changed - show warning
             log.info('Auto-paste permission not granted, disabling feature');
-            setAutoPaste(false);
             setShowAccessibilityWarning(true);
           }
-        } else {
-          setAutoPaste(false);
         }
       } catch (err) {
         log.error('Failed to load settings', { error: err });

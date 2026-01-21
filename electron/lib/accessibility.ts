@@ -1,16 +1,10 @@
-import { systemPreferences, shell, BrowserWindow, ipcMain } from 'electron';
+import { shell, BrowserWindow, ipcMain } from 'electron';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { createLogger } from './logger';
 
 const execFileAsync = promisify(execFile);
 const log = createLogger('Accessibility');
-
-export function checkAccessibilityPermission(): boolean {
-  const isTrusted = systemPreferences.isTrustedAccessibilityClient(false);
-  log.info('Accessibility API check', { isTrusted });
-  return isTrusted;
-}
 
 /**
  * Test if we can actually send keystrokes via System Events.
@@ -31,7 +25,9 @@ export async function testAccessibilityPermission(): Promise<boolean> {
     if (errorMessage.includes('1002') || errorMessage.includes('not allowed')) {
       log.info('Accessibility keystroke test failed - no permission', { error: errorMessage });
     } else {
-      log.info('Accessibility keystroke test failed', { error: errorMessage });
+      log.warn('Accessibility keystroke test failed with unexpected error', {
+        error: errorMessage,
+      });
     }
     return false;
   }

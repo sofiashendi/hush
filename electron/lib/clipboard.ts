@@ -8,6 +8,20 @@ const log = createLogger('Clipboard');
 let mainWindow: BrowserWindow | null = null;
 
 /**
+ * Execute Cmd+V paste via AppleScript
+ */
+function performPaste(successLogMessage: string) {
+  const script = `tell application "System Events" to keystroke "v" using command down`;
+  execFile('/usr/bin/osascript', ['-e', script], (error, stdout, stderr) => {
+    if (error) {
+      log.error('Auto-paste exec error', { error: error.message, stderr });
+    } else {
+      log.info(successLogMessage);
+    }
+  });
+}
+
+/**
  * Initialize clipboard IPC handlers
  * Must be called after window creation
  */
@@ -78,14 +92,7 @@ ipcMain.handle('paste-text', async (event, text, autoPaste = false) => {
               stderr: checkStderr,
             });
             // Try to paste anyway since we can't determine the role
-            const script = `tell application "System Events" to keystroke "v" using command down`;
-            execFile('/usr/bin/osascript', ['-e', script], (error, stdout, stderr) => {
-              if (error) {
-                log.error('Auto-paste exec error', { error: error.message, stderr });
-              } else {
-                log.info('Smart Paste: Pasted (role check failed, attempted anyway)');
-              }
-            });
+            performPaste('Smart Paste: Pasted (role check failed, attempted anyway)');
             return;
           }
 
@@ -106,15 +113,7 @@ ipcMain.handle('paste-text', async (event, text, autoPaste = false) => {
             log.info('Smart Paste: Pasting', { role });
             // We DO NOT need to hide window here because we are NOT focused (mainWindow.isFocused() check passed).
             // So we can just paste immediately!
-
-            const script = `tell application "System Events" to keystroke "v" using command down`;
-            execFile('/usr/bin/osascript', ['-e', script], (error, stdout, stderr) => {
-              if (error) {
-                log.error('Auto-paste exec error', { error: error.message, stderr });
-              } else {
-                log.info('Smart Paste: Paste command completed');
-              }
-            });
+            performPaste('Smart Paste: Paste command completed');
           } else {
             log.info('Smart Paste: Skipped pasting. Text is in clipboard', { role });
           }

@@ -36,7 +36,9 @@
     "artifactName": "${productName}.${ext}",
     "mac": {
       "target": "dmg",
-      "icon": "public/icon.png"
+      "icon": "public/icon.png",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist"
     },
     "asarUnpack": [
       "node_modules/ffmpeg-static/**/*",

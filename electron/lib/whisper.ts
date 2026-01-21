@@ -68,52 +68,64 @@ interface WhisperSegment {
 
 // Resolve ffmpeg binary path
 // Note: ffmpeg-static path needs special handling in Electron dev/prod environments
-let resolvedFfmpegPath = ffmpegPathImport || 'ffmpeg';
+// When vite bundles the code, the ffmpeg-static import returns a wrong path based on
+// the bundled __dirname. We use require.resolve to find the actual package location.
+let resolvedFfmpegPath = 'ffmpeg';
 
-if (ffmpegPathImport) {
-  if (app.isPackaged) {
-    // In production (packaged), ffmpeg is in app.asar.unpacked
-    const unpackedPath = ffmpegPathImport.replace('app.asar', 'app.asar.unpacked');
-    ffmpegLog.info('Packaged mode', { originalPath: ffmpegPathImport });
-    ffmpegLog.info('Trying unpacked path', { path: unpackedPath });
+if (app.isPackaged) {
+  // In production (packaged), use require.resolve to find ffmpeg-static in app.asar.unpacked
+  try {
+    const ffmpegStaticPkgPath = require.resolve('ffmpeg-static/package.json');
+    const ffmpegStaticDirInAsar = path.dirname(ffmpegStaticPkgPath);
+    const ffmpegStaticDirUnpacked = ffmpegStaticDirInAsar.replace('app.asar', 'app.asar.unpacked');
+    const ffmpegPath = path.join(ffmpegStaticDirUnpacked, 'ffmpeg');
 
-    if (fs.existsSync(unpackedPath)) {
-      resolvedFfmpegPath = unpackedPath;
-      ffmpegLog.info('Found at unpacked path', { path: resolvedFfmpegPath });
+    ffmpegLog.info('Packaged mode - resolving ffmpeg path', {
+      packageJson: ffmpegStaticPkgPath,
+      unpackedDir: ffmpegStaticDirUnpacked,
+    });
+
+    if (fs.existsSync(ffmpegPath)) {
+      resolvedFfmpegPath = ffmpegPath;
+      ffmpegLog.info('Found ffmpeg at unpacked path', { path: resolvedFfmpegPath });
     } else {
-      ffmpegLog.error('CRITICAL: Could not find ffmpeg binary in packaged app');
-      ffmpegLog.error('Tried path', { path: unpackedPath });
-      resolvedFfmpegPath = 'ffmpeg'; // System fallback (unlikely to work in sandboxed app)
-    }
-  } else {
-    // In Development, the bundled path might be wrong.
-    // We verify the existence and fall back to known locations.
-    if (!fs.existsSync(resolvedFfmpegPath)) {
-      ffmpegLog.warn('Default path not found. Searching alternatives', {
-        path: resolvedFfmpegPath,
+      ffmpegLog.error('CRITICAL: Could not find ffmpeg binary in packaged app', {
+        triedPath: ffmpegPath,
       });
+    }
+  } catch (e) {
+    ffmpegLog.error('Failed to resolve ffmpeg-static package', e);
+  }
+} else {
+  // In development, try the import first, then fall back to require.resolve
+  if (ffmpegPathImport && fs.existsSync(ffmpegPathImport)) {
+    resolvedFfmpegPath = ffmpegPathImport;
+    ffmpegLog.info('Using ffmpeg-static import path', { path: resolvedFfmpegPath });
+  } else {
+    ffmpegLog.warn('ffmpeg-static import path not found, searching alternatives', {
+      importPath: ffmpegPathImport,
+    });
 
-      // Use require.resolve to programmatically find the ffmpeg-static package
-      try {
-        const ffmpegStaticPkgPath = require.resolve('ffmpeg-static/package.json');
-        const ffmpegStaticDir = path.dirname(ffmpegStaticPkgPath);
-        const candidate = path.join(ffmpegStaticDir, 'ffmpeg');
-        if (fs.existsSync(candidate)) {
-          ffmpegLog.info('Found executable via require.resolve', { path: candidate });
-          resolvedFfmpegPath = candidate;
-        }
-      } catch (e) {
-        ffmpegLog.warn('require.resolve failed', e);
+    try {
+      const ffmpegStaticPkgPath = require.resolve('ffmpeg-static/package.json');
+      const ffmpegStaticDir = path.dirname(ffmpegStaticPkgPath);
+      const candidate = path.join(ffmpegStaticDir, 'ffmpeg');
+      if (fs.existsSync(candidate)) {
+        resolvedFfmpegPath = candidate;
+        ffmpegLog.info('Found ffmpeg via require.resolve', { path: resolvedFfmpegPath });
+      } else {
+        ffmpegLog.warn('ffmpeg binary not found at expected path in package', { path: candidate });
       }
+    } catch (e) {
+      ffmpegLog.warn('require.resolve failed', e);
     }
   }
+}
 
-  if (fs.existsSync(resolvedFfmpegPath)) {
-    ffmpegLog.info('Path resolved', { path: resolvedFfmpegPath });
-  } else {
-    ffmpegLog.error('CRITICAL: Could not find ffmpeg binary! Falling back to system ffmpeg');
-    resolvedFfmpegPath = 'ffmpeg'; // System fallback
-  }
+if (resolvedFfmpegPath !== 'ffmpeg') {
+  ffmpegLog.info('FFmpeg path resolved', { path: resolvedFfmpegPath });
+} else {
+  ffmpegLog.error('CRITICAL: Could not find ffmpeg binary! Falling back to system ffmpeg');
 }
 
 // Store reference to main window for sending events

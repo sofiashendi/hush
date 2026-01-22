@@ -15,13 +15,25 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [isDownloading, setIsDownloading] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
+  const [showAccessibilityWarning, setShowAccessibilityWarning] = useState(false);
 
   useEffect(() => {
     const load = async () => {
       try {
         const config = await window.electronAPI.getConfig();
         setModel(config.model || 'base');
-        setAutoPaste(config.autoPaste ?? false);
+
+        // If autoPaste is enabled in config, verify we still have permission
+        if (config.autoPaste) {
+          const hasPermission = await window.electronAPI.checkAccessibilityPermission();
+          if (hasPermission) {
+            setAutoPaste(true);
+          } else {
+            // Permission was revoked or app signature changed - show warning
+            log.info('Auto-paste permission not granted, disabling feature');
+            setShowAccessibilityWarning(true);
+          }
+        }
       } catch (err) {
         log.error('Failed to load settings', { error: err });
       }
@@ -48,6 +60,30 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     });
     return cleanup;
   }, []);
+
+  // Listen for accessibility permission changes (when app regains focus)
+  useEffect(() => {
+    const cleanup = window.electronAPI.onAccessibilityPermissionChanged((granted: boolean) => {
+      if (granted && showAccessibilityWarning) {
+        setAutoPaste(true);
+        setShowAccessibilityWarning(false);
+      }
+    });
+    return cleanup;
+  }, [showAccessibilityWarning]);
+
+  const handleAutoPasteToggle = async () => {
+    if (!autoPaste) {
+      // Trying to turn ON - check permission first
+      const granted = await window.electronAPI.checkAccessibilityPermission();
+      if (!granted) {
+        setShowAccessibilityWarning(true);
+        return;
+      }
+    }
+    setAutoPaste(!autoPaste);
+    setShowAccessibilityWarning(false);
+  };
 
   const handleModelChange = async (newModel: string) => {
     if (newModel === model) return;
@@ -219,7 +255,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             </p>
           </div>
           <button
-            onClick={() => setAutoPaste(!autoPaste)}
+            onClick={handleAutoPasteToggle}
             className="relative flex-shrink-0"
             style={{
               width: '52px',
@@ -247,6 +283,44 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             />
           </button>
         </div>
+
+        {/* Accessibility Permission Warning */}
+        {showAccessibilityWarning && (
+          <div
+            style={{
+              marginTop: '16px',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(251, 191, 36, 0.15)',
+              border: '1px solid rgba(251, 191, 36, 0.3)',
+            }}
+          >
+            <p
+              style={{
+                color: '#fcd34d',
+                fontSize: '14px',
+                margin: 0,
+              }}
+            >
+              Auto-paste requires Accessibility permission to type into other apps.
+            </p>
+            <button
+              onClick={() => window.electronAPI.openAccessibilitySettings()}
+              style={{
+                marginTop: '12px',
+                padding: '8px 16px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(251, 191, 36, 0.2)',
+                border: '1px solid rgba(251, 191, 36, 0.4)',
+                color: '#fcd34d',
+                fontSize: '14px',
+                cursor: 'pointer',
+              }}
+            >
+              Open System Settings
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Footer */}

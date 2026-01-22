@@ -8,6 +8,20 @@ const log = createLogger('Clipboard');
 let mainWindow: BrowserWindow | null = null;
 
 /**
+ * Execute Cmd+V paste via AppleScript
+ */
+function performPaste(successLogMessage: string) {
+  const script = `tell application "System Events" to keystroke "v" using command down`;
+  execFile('/usr/bin/osascript', ['-e', script], (error, stdout, stderr) => {
+    if (error) {
+      log.error('Auto-paste exec error', { error: error.message, stderr });
+    } else {
+      log.info(successLogMessage);
+    }
+  });
+}
+
+/**
  * Initialize clipboard IPC handlers
  * Must be called after window creation
  */
@@ -21,8 +35,8 @@ ipcMain.handle('type-placeholder', async () => {
   // as it doesn't overwrite the clipboard.
   const script = `tell application "System Events" to keystroke "..."`;
 
-  execFile('osascript', ['-e', script], (err) => {
-    if (err) log.error('Placeholder error', err);
+  execFile('/usr/bin/osascript', ['-e', script], (err, stdout, stderr) => {
+    if (err) log.error('Placeholder error', { error: err.message, stderr });
   });
 });
 
@@ -35,8 +49,8 @@ ipcMain.handle('remove-placeholder', async () => {
         end repeat
     end tell`;
 
-  execFile('osascript', ['-e', script], (err) => {
-    if (err) log.error('Remove placeholder error', err);
+  execFile('/usr/bin/osascript', ['-e', script], (err, stdout, stderr) => {
+    if (err) log.error('Remove placeholder error', { error: err.message, stderr });
   });
 });
 
@@ -46,6 +60,11 @@ ipcMain.handle('paste-text', async (event, text, autoPaste = false) => {
   clipboard.writeText(text);
 
   if (autoPaste) {
+    log.info('Auto-paste enabled', {
+      hasWindow: !!mainWindow,
+      isFocused: mainWindow?.isFocused(),
+    });
+
     if (!mainWindow || !mainWindow.isFocused()) {
       // User is focused elsewhere (Word, Notes, Antigravity, etc.).
       // Proceed to Smart Role Check.
@@ -63,33 +82,43 @@ ipcMain.handle('paste-text', async (event, text, autoPaste = false) => {
                 end try
             end tell`;
 
-      execFile('osascript', ['-e', checkEditableScript], (checkErr, checkStdout) => {
-        const role = checkStdout?.trim();
-        log.info('Smart Paste: Focused Role', { role });
+      execFile(
+        '/usr/bin/osascript',
+        ['-e', checkEditableScript],
+        (checkErr, checkStdout, checkStderr) => {
+          if (checkErr) {
+            log.error('Smart Paste: Role check failed', {
+              error: checkErr.message,
+              stderr: checkStderr,
+            });
+            // Try to paste anyway since we can't determine the role
+            performPaste('Smart Paste: Pasted (role check failed, attempted anyway)');
+            return;
+          }
 
-        const editableRoles = [
-          'AXTextField',
-          'AXTextArea',
-          'AXWebArea',
-          'AXRichTextView',
-          'AXgroup',
-        ];
-        // Not Pasting fix for unknowns:
-        const extendedRoles = [...editableRoles, 'Unknown'];
+          const role = checkStdout?.trim();
+          log.info('Smart Paste: Focused Role', { role });
 
-        if (extendedRoles.includes(role)) {
-          log.info('Smart Paste: Pasting', { role });
-          // We DO NOT need to hide window here because we are NOT focused (mainWindow.isFocused() check passed).
-          // So we can just paste immediately!
+          const editableRoles = [
+            'AXTextField',
+            'AXTextArea',
+            'AXWebArea',
+            'AXRichTextView',
+            'AXgroup',
+          ];
+          // Not Pasting fix for unknowns:
+          const extendedRoles = [...editableRoles, 'Unknown'];
 
-          const script = `tell application "System Events" to keystroke "v" using command down`;
-          execFile('osascript', ['-e', script], (error) => {
-            if (error) log.error('Auto-paste exec error', error);
-          });
-        } else {
-          log.info('Smart Paste: Skipped pasting. Text is in clipboard', { role });
+          if (extendedRoles.includes(role)) {
+            log.info('Smart Paste: Pasting', { role });
+            // We DO NOT need to hide window here because we are NOT focused (mainWindow.isFocused() check passed).
+            // So we can just paste immediately!
+            performPaste('Smart Paste: Paste command completed');
+          } else {
+            log.info('Smart Paste: Skipped pasting. Text is in clipboard', { role });
+          }
         }
-      });
+      );
     } else {
       // Hush IS focused.
       // Correct Behavior: Just Copy to Clipboard. Stay Visible.

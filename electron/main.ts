@@ -9,6 +9,7 @@ import { loadConfig, saveConfig } from './lib/config';
 const log = createLogger('Main');
 import { setupClipboardHandlers } from './lib/clipboard';
 import { initWhisper, cleanupTempFiles, setWhisperWindow } from './lib/whisper';
+import { setupAccessibilityHandlers } from './lib/accessibility';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -68,6 +69,7 @@ const createWindow = () => {
   // Setup module window references
   setupClipboardHandlers(mainWindow);
   setWhisperWindow(mainWindow);
+  setupAccessibilityHandlers(mainWindow);
 
   const DEV_PORT = 34567;
 

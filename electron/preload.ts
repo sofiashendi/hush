@@ -44,4 +44,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   isModelReady: () => ipcRenderer.invoke('is-model-ready'),
   log: (message: string) => ipcRenderer.send('renderer-log', message),
+  checkAccessibilityPermission: () => ipcRenderer.invoke('check-accessibility-permission'),
+  openAccessibilitySettings: () => ipcRenderer.invoke('open-accessibility-settings'),
+  onAccessibilityPermissionChanged: (callback: (granted: boolean) => void) => {
+    const cb = (_event: IpcRendererEvent, granted: boolean) => callback(granted);
+    ipcRenderer.on('accessibility-permission-changed', cb);
+    return () => ipcRenderer.removeListener('accessibility-permission-changed', cb);
+  },
 });
